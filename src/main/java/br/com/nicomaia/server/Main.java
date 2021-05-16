@@ -1,14 +1,11 @@
 package br.com.nicomaia.server;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
 import java.net.*;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 public class Main {
     public static Map<String, Integer> schemaWithPort;
@@ -28,18 +25,51 @@ public class Main {
             try (var socket = serverSocket.accept()) {
                 System.out.println(socket);
 
-                byte[] greeting = new byte[20];
-                int bytesRead = socket.getInputStream().read(greeting);
-                System.out.println(bytesRead);
-                System.out.println(Arrays.toString(greeting));
+                byte[] buffer = new byte[2];
+                socket.getInputStream().read(buffer);
+                System.out.println("Q: " + Arrays.toString(buffer));
 
-                Set<AuthType> supportedAuthTypes = AuthType.valueOf(greeting[1]);
-                System.out.println(supportedAuthTypes);
+                byte socksVersion = buffer[0];
+                byte availableClientAuthTypes = buffer[1];
+
+                buffer = new byte[availableClientAuthTypes];
+                socket.getInputStream().read(buffer);
+                System.out.println("Q: " + Arrays.toString(buffer));
+
+                var loginNegotiationCommand = new LoginNegotiationCommand(socksVersion, availableClientAuthTypes, SupportedAuthType.valueOf(buffer));
+                var loginNegotiationResult = new LoginNegotiationResult(socksVersion, SupportedAuthType.NO_AUTH);
+                socket.getOutputStream().write(loginNegotiationResult.getResponse());
+                System.out.println("R: " + Arrays.toString(loginNegotiationResult.getResponse()));
+
+                buffer = new byte[4];
+                socket.getInputStream().read(buffer);
+                System.out.println("Q: " + Arrays.toString(buffer));
+
+                socksVersion = buffer[0];
+                CommandType commandType = CommandType.valueOf(buffer[1]);
+                AddressType addressType = AddressType.valueOf(buffer[3]);
+                InetAddress address = null;
+
+                if (addressType == AddressType.IPV6) {
+                    buffer = new byte[16];
+                } else if (addressType == AddressType.IPV4) {
+                    buffer = new byte[4];
+                }
+
+                socket.getInputStream().read(buffer);
+                address = InetAddress.getByAddress(buffer);
+
+                buffer = new byte[2];
+                socket.getInputStream().read(buffer);
+                // Converting unsigned byte to signed and then concatenate the numbers
+//                int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
+                int port = ByteBuffer.wrap(buffer).getShort() & 0xFFFF;
+
+                Command command = new Command(socksVersion, commandType, addressType, address, port);
+                System.out.println(command);
 
 
-
-                // [5, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] // sem usuário e senha
-                // [5, 3, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] // com usuário e senha
+//                byte chosenAuthMethod = (byte) 0xFF; // none
 
 //                int bytesRead = socket.getInputStream().read(version, 0, 1);
 //                System.out.println(Arrays.toString(version));
