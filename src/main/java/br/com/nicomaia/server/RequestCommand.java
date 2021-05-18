@@ -2,14 +2,14 @@ package br.com.nicomaia.server;
 
 import java.net.InetAddress;
 
-public class Command {
+public class RequestCommand {
     private final byte socksVersion;
     private final CommandType commandType;
     private final AddressType addressType;
     private final InetAddress address;
     private final int port;
 
-    public Command(byte socksVersion, CommandType commandType, AddressType addressType, InetAddress address, int port) {
+    public RequestCommand(byte socksVersion, CommandType commandType, AddressType addressType, InetAddress address, int port) {
         this.socksVersion = socksVersion;
         this.commandType = commandType;
         this.addressType = addressType;
