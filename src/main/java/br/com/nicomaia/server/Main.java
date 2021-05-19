@@ -1,10 +1,7 @@
 package br.com.nicomaia.server;
 
-import jdk.swing.interop.SwingInterOpUtils;
-
 import java.io.IOException;
 import java.net.*;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,7 +17,7 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            var serverSocket = new ServerSocket(8089, 50, InetAddress.getLoopbackAddress());
+            var serverSocket = new ServerSocket(8089);
             System.out.println(serverSocket);
 
             while (true) {
