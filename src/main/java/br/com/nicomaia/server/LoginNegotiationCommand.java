@@ -24,4 +24,13 @@ public class LoginNegotiationCommand {
     public Set<SupportedAuthType> getSupportedAuthTypes() {
         return supportedAuthTypes;
     }
+
+    @Override
+    public String toString() {
+        return "LoginNegotiationCommand{" +
+                "socksVersion=" + socksVersion +
+                ", availableClientAuthTypes=" + availableClientAuthTypes +
+                ", supportedAuthTypes=" + supportedAuthTypes +
+                '}';
+    }
 }

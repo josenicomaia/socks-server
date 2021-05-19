@@ -1,5 +1,7 @@
 package br.com.nicomaia.server;
 
+import jdk.swing.interop.SwingInterOpUtils;
+
 import java.io.IOException;
 import java.net.*;
 import java.util.Arrays;
@@ -21,82 +23,104 @@ public class Main {
             var serverSocket = new ServerSocket(8089, 50, InetAddress.getLoopbackAddress());
             System.out.println(serverSocket);
 
-            try (var clientSocket = serverSocket.accept()) {
-                System.out.println(clientSocket);
+            while (true) {
+                var clientSocket = serverSocket.accept();
 
-                byte[] buffer = new byte[2];
-                clientSocket.getInputStream().read(buffer);
-                System.out.println("Q: " + Arrays.toString(buffer));
+                var clientThread = new Thread(() -> {
+                    try {
+                        System.out.printf("Starting %s...%n", Thread.currentThread());
+                        System.out.println(clientSocket);
 
-                byte socksVersion = buffer[0];
-                byte availableClientAuthTypes = buffer[1];
+                        byte[] buffer = new byte[2];
+                        clientSocket.getInputStream().read(buffer);
 
-                buffer = new byte[availableClientAuthTypes];
-                clientSocket.getInputStream().read(buffer);
-                System.out.println("Q: " + Arrays.toString(buffer));
+                        byte socksVersion = buffer[0];
+                        byte availableClientAuthTypes = buffer[1];
 
-                var loginNegotiationCommand = new LoginNegotiationCommand(socksVersion, availableClientAuthTypes, SupportedAuthType.valueOf(buffer));
-                var loginNegotiationResult = new LoginNegotiationResult(socksVersion, SupportedAuthType.NO_AUTH);
-                clientSocket.getOutputStream().write(loginNegotiationResult.getResponse());
-                System.out.println("R: " + Arrays.toString(loginNegotiationResult.getResponse()));
+                        buffer = new byte[availableClientAuthTypes];
+                        clientSocket.getInputStream().read(buffer);
 
-                buffer = new byte[4];
-                clientSocket.getInputStream().read(buffer);
-                System.out.println("Q: " + Arrays.toString(buffer));
+                        var loginNegotiationCommand = new LoginNegotiationCommand(socksVersion, availableClientAuthTypes, SupportedAuthType.valueOf(buffer));
+                        var loginNegotiationResult = new LoginNegotiationResult(socksVersion, SupportedAuthType.NO_AUTH);
 
-                socksVersion = buffer[0];
-                CommandType commandType = CommandType.valueOf(buffer[1]);
-                AddressType addressType = AddressType.valueOf(buffer[3]);
-                InetAddress address = null;
+                        System.out.println(loginNegotiationCommand);
+                        System.out.println(loginNegotiationResult);
 
-                if (addressType == AddressType.IPV6) {
-                    buffer = new byte[16];
-                } else if (addressType == AddressType.IPV4) {
-                    buffer = new byte[4];
-                }
+                        clientSocket.getOutputStream().write(loginNegotiationResult.getResponse());
 
-                clientSocket.getInputStream().read(buffer);
-                address = InetAddress.getByAddress(buffer);
+                        buffer = new byte[4];
+                        clientSocket.getInputStream().read(buffer);
 
-                // byte = 1 byte (8 bits - 1 bit for signaling)
-                // short = 2 bytes (16 bits - 1 bit for signaling)
-                // int = 4 bytes (32 bits - 1 bit for signaling)
-                // long = 8 bytes (64 bits - 1 bit for signaling)
+                        socksVersion = buffer[0];
+                        CommandType commandType = CommandType.valueOf(buffer[1]);
+                        AddressType addressType = AddressType.valueOf(buffer[3]);
+                        InetAddress address = null;
 
-                buffer = new byte[2];
-                clientSocket.getInputStream().read(buffer);
-                // Converting unsigned byte to signed and then concatenate the numbers
-                int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
+                        if (AddressType.IPV6 == addressType) {
+                            buffer = new byte[16];
+                        } else if (AddressType.IPV4 == addressType) {
+                            buffer = new byte[4];
+                        } else if (AddressType.DOMAIN_NAME == addressType) {
+                            buffer = new byte[1];
+                            clientSocket.getInputStream().read(buffer);
+                            buffer = new byte[buffer[0]];
+                        }
 
-                clientSocket.getOutputStream().write(new RequestHandler().handle(new RequestCommand(socksVersion, commandType, addressType, address, port)).getResponse());
-                clientSocket.getOutputStream().flush();
+                        clientSocket.getInputStream().read(buffer);
 
-                Socket proxiedConnection = Session.getInstance().get("connection");
+                        if (AddressType.DOMAIN_NAME == addressType) {
+                            address = InetAddress.getByName(new String(buffer));
+                        } else {
+                            address = InetAddress.getByAddress(buffer);
+                        }
 
-                int read;
-//                byte[] bytes = new byte[proxiedConnection.getSendBufferSize()];
-                byte[] bytes = new byte[8192];
+                        buffer = new byte[2];
+                        clientSocket.getInputStream().read(buffer);
+                        // Converting unsigned byte to signed and then concatenate the numbers
+                        int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
 
-                // @TODO: Don't know why but without this it DOESN'T works
-                System.out.println(clientSocket.getInputStream().available());
+                        var requestCommand = new RequestCommand(socksVersion, commandType, addressType, address, port);
+                        var requestResponse = new RequestHandler().handle(requestCommand);
 
-                while (clientSocket.getInputStream().available() > 0) {
-                    read = clientSocket.getInputStream().read(bytes, 0, 8192);
-                    System.out.println(read);
-                    proxiedConnection.getOutputStream().write(bytes, 0, read);
-                }
+                        System.out.println(requestCommand);
+                        System.out.println(requestResponse);
 
-                Thread.sleep(1000);
+                        clientSocket.getOutputStream().write(requestResponse.getResponse());
+                        clientSocket.getOutputStream().flush();
 
-                while (proxiedConnection.getInputStream().available() > 0) {
-                    read = proxiedConnection.getInputStream().read(bytes, 0, 8192);
-                    System.out.println(read);
-                    clientSocket.getOutputStream().write(bytes, 0, read);
-                }
+                        Socket proxiedConnection = Session.getInstance().get("connection");
 
-                proxiedConnection.close();
+                        var clientToProxyThread = new Thread(() -> {
+                            try {
+                                clientSocket.getInputStream().transferTo(proxiedConnection.getOutputStream());
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        });
+
+                        var proxyToClientThread = new Thread(() -> {
+                            try {
+                                proxiedConnection.getInputStream().transferTo(clientSocket.getOutputStream());
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        });
+
+                        clientToProxyThread.start();
+                        proxyToClientThread.start();
+
+                        clientToProxyThread.join();
+                        proxyToClientThread.join();
+
+                        System.out.printf("Terminating %s...%n", Thread.currentThread());
+                    } catch (InterruptedException | IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+
+                clientThread.start();
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }

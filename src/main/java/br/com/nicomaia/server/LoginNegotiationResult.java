@@ -22,4 +22,12 @@ public class LoginNegotiationResult {
                 socksVersion, chosenAuthMethod.getNumber()
         };
     }
+
+    @Override
+    public String toString() {
+        return "LoginNegotiationResult{" +
+                "socksVersion=" + socksVersion +
+                ", chosenAuthMethod=" + chosenAuthMethod +
+                '}';
+    }
 }
