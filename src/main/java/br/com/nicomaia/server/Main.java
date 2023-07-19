@@ -1,7 +1,15 @@
 package br.com.nicomaia.server;
 
+import br.com.nicomaia.server.commands.AddressType;
+import br.com.nicomaia.server.commands.Command;
+import br.com.nicomaia.server.commands.CommandType;
+import br.com.nicomaia.server.commands.handlers.ConnectHandler;
+import br.com.nicomaia.server.commands.handlers.HandlersHolder;
+
 import java.io.IOException;
-import java.net.*;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,6 +24,9 @@ public class Main {
     }
 
     public static void main(String[] args) {
+        HandlersHolder handlers = new HandlersHolder();
+        handlers.register(CommandType.CONNECT, new ConnectHandler());
+
         try {
             var serverSocket = new ServerSocket(8089);
             System.out.println(serverSocket);
@@ -77,41 +88,12 @@ public class Main {
                             // Converting unsigned byte to signed and then concatenate the numbers
                             int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
 
-                            var requestCommand = new RequestCommand(socksVersion, commandType, addressType, address, port);
-                            var requestResponse = new RequestHandler().handle(requestCommand);
-
-                            System.out.println(requestCommand);
-                            System.out.println(requestResponse);
-
-                            clientSocket.getOutputStream().write(requestResponse.getResponse());
-                            clientSocket.getOutputStream().flush();
-
-                            Socket proxiedConnection = Session.getInstance().get("connection");
-
-                            var clientToProxyThread = new Thread(() -> {
-                                try {
-                                    clientSocket.getInputStream().transferTo(proxiedConnection.getOutputStream());
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                }
-                            });
-
-                            var proxyToClientThread = new Thread(() -> {
-                                try {
-                                    proxiedConnection.getInputStream().transferTo(clientSocket.getOutputStream());
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                }
-                            });
-
-                            clientToProxyThread.start();
-                            proxyToClientThread.start();
-
-                            clientToProxyThread.join();
-                            proxyToClientThread.join();
+                            var command = new Command(socksVersion, commandType, addressType, address, port);
+                            System.out.println(command);
+                            handlers.get(commandType).handle(clientSocket, command);
 
                             System.out.printf("Terminating %s...%n", Thread.currentThread());
-                        } catch (InterruptedException | IOException e) {
+                        } catch (IOException e) {
                             e.printStackTrace();
                         }
                     });

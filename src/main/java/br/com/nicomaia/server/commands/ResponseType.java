@@ -1,8 +1,8 @@
-package br.com.nicomaia.server;
+package br.com.nicomaia.server.commands;
 
 import java.util.Arrays;
 
-public enum RequestResponseType {
+public enum ResponseType {
     SUCCEEDED((byte) 0x00),
     SOCKS_SERVER_FAILURE((byte) 0x01),
     CONNECTION_NOT_ALLOWED((byte) 0x02),
@@ -16,7 +16,7 @@ public enum RequestResponseType {
 
     private final byte number;
 
-    RequestResponseType(byte number) {
+    ResponseType(byte number) {
         this.number = number;
     }
 
@@ -24,7 +24,7 @@ public enum RequestResponseType {
         return number;
     }
 
-    public static RequestResponseType valueOf(byte number) {
+    public static ResponseType valueOf(byte number) {
         return Arrays.stream(values())
                 .filter(commandType -> commandType.number == number)
                 .findFirst()
