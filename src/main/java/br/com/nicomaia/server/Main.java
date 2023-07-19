@@ -9,20 +9,8 @@ import br.com.nicomaia.server.commands.handlers.HandlersHolder;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
 
 public class Main {
-    public static Map<String, Integer> schemaWithPort;
-
-    static {
-        schemaWithPort = new HashMap<>() {{
-            put("http", 80);
-            put("https", 443);
-        }};
-    }
-
     public static void main(String[] args) {
         HandlersHolder handlers = new HandlersHolder();
         handlers.register(CommandType.CONNECT, new ConnectHandler());
@@ -106,13 +94,5 @@ public class Main {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-
-    public static int getPort(URI uri) {
-        if (uri.getPort() != -1) {
-            return uri.getPort();
-        }
-
-        return schemaWithPort.getOrDefault(uri.getScheme().toLowerCase(), -1);
     }
 }

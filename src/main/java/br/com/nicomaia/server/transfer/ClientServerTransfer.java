@@ -19,8 +19,9 @@ public class ClientServerTransfer {
             try {
                 while (client.isConnected()) {
                     transferTo(client.getInputStream(), server.getOutputStream());
+                    Thread.sleep(500);
                 }
-            } catch (IOException e) {
+            } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
 
                 try {
@@ -36,8 +37,9 @@ public class ClientServerTransfer {
             try {
                 while (server.isConnected()) {
                     transferTo(server.getInputStream(), client.getOutputStream());
+                    Thread.sleep(500);
                 }
-            } catch (IOException e) {
+            } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
 
                 try {
@@ -51,14 +53,11 @@ public class ClientServerTransfer {
     }
 
     private void transferTo(InputStream in, OutputStream out) throws IOException {
-        long transferred = 0;
         byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
         int read;
 
         while ((read = in.read(buffer, 0, DEFAULT_BUFFER_SIZE)) >= 0) {
-            System.out.println(new String(buffer));
             out.write(buffer, 0, read);
-            transferred += read;
         }
     }
 
