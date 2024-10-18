@@ -1,17 +1,33 @@
 package br.com.nicomaia.server;
 
-import br.com.nicomaia.server.commands.AddressType;
 import br.com.nicomaia.server.commands.Command;
 import br.com.nicomaia.server.commands.CommandType;
 import br.com.nicomaia.server.commands.handlers.ConnectHandler;
 import br.com.nicomaia.server.commands.handlers.HandlersHolder;
+import br.com.nicomaia.server.net.Address;
+import br.com.nicomaia.server.net.AddressResolver;
+import br.com.nicomaia.server.net.AddressType;
+import br.com.nicomaia.server.net.ResolverNotFoundException;
+import br.com.nicomaia.server.net.resolvers.DomainInetResolver;
+import br.com.nicomaia.server.net.resolvers.InetResolver;
+import br.com.nicomaia.server.net.resolvers.IpInetResolver;
 
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Main {
     public static void main(String[] args) {
+        Map<AddressType, InetResolver> resolvers = new HashMap<>();
+        resolvers.put(AddressType.IPV4, new IpInetResolver());
+        resolvers.put(AddressType.IPV6, new IpInetResolver());
+        resolvers.put(AddressType.DOMAIN_NAME, new DomainInetResolver());
+
+        AddressResolver addressResolver = new AddressResolver(resolvers);
+
         HandlersHolder handlers = new HandlersHolder();
         handlers.register(CommandType.CONNECT, new ConnectHandler());
 
@@ -52,37 +68,17 @@ public class Main {
                             socksVersion = buffer[0];
                             CommandType commandType = CommandType.valueOf(buffer[1]);
                             AddressType addressType = AddressType.valueOf(buffer[3]);
-                            InetAddress address = null;
 
-                            if (AddressType.IPV6 == addressType) {
-                                buffer = new byte[16];
-                            } else if (AddressType.IPV4 == addressType) {
-                                buffer = new byte[4];
-                            } else if (AddressType.DOMAIN_NAME == addressType) {
-                                buffer = new byte[1];
-                                clientSocket.getInputStream().read(buffer);
-                                buffer = new byte[buffer[0]];
-                            }
+                            Address address = readAddressBytes(addressType, clientSocket);
+                            InetAddress inetAddress = addressResolver.resolve(address);
+                            int port = readPort(clientSocket);
 
-                            clientSocket.getInputStream().read(buffer);
-
-                            if (AddressType.DOMAIN_NAME == addressType) {
-                                address = InetAddress.getByName(new String(buffer));
-                            } else {
-                                address = InetAddress.getByAddress(buffer);
-                            }
-
-                            buffer = new byte[2];
-                            clientSocket.getInputStream().read(buffer);
-                            // Converting unsigned byte to signed and then concatenate the numbers
-                            int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
-
-                            var command = new Command(socksVersion, commandType, addressType, address, port);
+                            var command = new Command(socksVersion, commandType, addressType, inetAddress, port);
                             System.out.println(command);
                             handlers.get(commandType).handle(clientSocket, command);
 
                             System.out.printf("Terminating %s...%n", Thread.currentThread());
-                        } catch (IOException e) {
+                        } catch (IOException | ResolverNotFoundException e) {
                             e.printStackTrace();
                         }
                     });
@@ -95,5 +91,38 @@ public class Main {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private static Address readAddressBytes(AddressType addressType, Socket clientSocket) throws IOException {
+        byte[] buffer = null;
+
+        if (AddressType.IPV6 == addressType) {
+            buffer = new byte[16];
+        } else if (AddressType.IPV4 == addressType) {
+            buffer = new byte[4];
+        } else if (AddressType.DOMAIN_NAME == addressType) {
+            buffer = new byte[readDomainLength(clientSocket)];
+        }
+
+        clientSocket.getInputStream().read(buffer);
+
+        return new Address(buffer, addressType);
+    }
+
+    private static byte readDomainLength(Socket clientSocket) throws IOException {
+        byte[] domainLengthBuffer = new byte[1];
+        clientSocket.getInputStream().read(domainLengthBuffer);
+
+        return domainLengthBuffer[0];
+    }
+
+    private static int readPort(Socket clientSocket) throws IOException {
+        byte[] buffer = new byte[2];
+        clientSocket.getInputStream().read(buffer);
+
+        // Converting unsigned byte to signed and then concatenate the numbers
+        int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
+
+        return port;
     }
 }

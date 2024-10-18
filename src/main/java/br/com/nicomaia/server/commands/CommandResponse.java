@@ -1,5 +1,6 @@
 package br.com.nicomaia.server.commands;
 
+import br.com.nicomaia.server.net.AddressType;
 import lombok.ToString;
 
 import java.io.ByteArrayOutputStream;
@@ -21,7 +22,7 @@ public abstract class CommandResponse {
         stream.write(command.getSocksVersion());
         stream.write(responseType.getNumber());
         stream.write(0x00);
-        stream.write(command.getAddressType().getNumber());
+        stream.write(command.getAddressType().getTypeCode());
 
         if (command.getAddressType() == AddressType.DOMAIN_NAME) {
             stream.write(4);

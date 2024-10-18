@@ -1,5 +1,6 @@
 package br.com.nicomaia.server.commands;
 
+import br.com.nicomaia.server.net.AddressType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.ToString;
