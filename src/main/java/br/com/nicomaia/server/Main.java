@@ -16,7 +16,8 @@ public class Main {
         handlers.register(CommandType.CONNECT, new ConnectHandler());
 
         try {
-            var serverSocket = new ServerSocket(8089);
+            var serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 5353;
+            var serverSocket = new ServerSocket(serverPort);
             System.out.println(serverSocket);
 
             while (true) {
