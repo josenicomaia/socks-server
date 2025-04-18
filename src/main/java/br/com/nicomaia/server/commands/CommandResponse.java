@@ -4,7 +4,6 @@ import br.com.nicomaia.server.net.AddressType;
 import lombok.ToString;
 
 import java.io.ByteArrayOutputStream;
-import java.net.Socket;
 
 @ToString
 public abstract class CommandResponse {
@@ -16,7 +15,7 @@ public abstract class CommandResponse {
         this.responseType = responseType;
     }
 
-    public byte[] getBytes(Socket client) {
+    public byte[] getBytes() {
         // https://datatracker.ietf.org/doc/html/rfc1928#section-6
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
         stream.write(command.getSocksVersion());

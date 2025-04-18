@@ -15,7 +15,7 @@ public class ConnectHandler implements CommandHandler {
         Socket proxiedConnection = null;
         try {
             proxiedConnection = new Socket(command.getAddress(), command.getPort());
-            var response = new SuccessCommandResponse(command, proxiedConnection);
+            var response = new SuccessCommandResponse(command);
 
             ClientServerTransfer transfer = new ClientServerTransfer(client, proxiedConnection);
 
@@ -56,7 +56,7 @@ public class ConnectHandler implements CommandHandler {
     private void sendResponse(Socket client, CommandResponse response) throws IOException {
         System.out.println(response);
 
-        client.getOutputStream().write(response.getBytes(client));
+        client.getOutputStream().write(response.getBytes());
         client.getOutputStream().flush();
     }
 }
