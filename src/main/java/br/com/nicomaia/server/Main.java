@@ -38,12 +38,10 @@ public class Main {
         HandlersHolder handlers = new HandlersHolder();
         handlers.register(CommandType.CONNECT, new ConnectHandler());
 
-        // Start the thread pool server
         Thread threadPoolServerThread = new Thread(() -> startThreadPoolServer(args, addressResolver, handlers));
         threadPoolServerThread.setDaemon(true);
         threadPoolServerThread.start();
 
-        // Start the reactor server
         startReactorServer(args, addressResolver, handlers);
     }
 
@@ -54,14 +52,12 @@ public class Main {
             System.out.println("Server started on port " + serverPort);
             System.out.println(serverSocket);
 
-            // Create a fixed thread pool instead of creating a new thread for each client
             ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
             while (true) {
                 try {
                     var clientSocket = serverSocket.accept();
 
-                    // Submit task to thread pool instead of creating a new thread
                     executorService.submit(() -> {
                         try {
                             System.out.printf("Handling client in thread %s...%n", Thread.currentThread());
@@ -117,21 +113,14 @@ public class Main {
         var serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 8080;
 
         DisposableServer server = TcpServer.create()
-                .port(serverPort + 1) // Use a different port for the reactor server
+                .port(serverPort + 1)
                 .handle((inbound, outbound) -> {
                     System.out.println("New client connected to reactor server");
 
-                    // Demonstração simplificada do servidor reativo
-                    // Em uma implementação completa, seria necessário implementar todo o protocolo SOCKS
-                    // de forma reativa, similar ao que é feito no método startThreadPoolServer
-
-                    // Criar uma resposta de sucesso para demonstrar o uso da API reativa
                     ByteBuf responseBuffer = Unpooled.wrappedBuffer(new byte[] { 5, 0, 0, 1, 127, 0, 0, 1, 0, 80 });
 
-                    // Enviar a resposta e então iniciar a transferência de dados
                     return outbound.send(Mono.just(responseBuffer))
                             .then(
-                                // Implementação simplificada: apenas ecoar os dados recebidos
                                 inbound.receive()
                                     .doOnNext(data -> System.out.println("Recebido: " + data.readableBytes() + " bytes"))
                                     .flatMap(data -> outbound.send(Mono.just(data.retain())))
@@ -172,7 +161,6 @@ public class Main {
         byte[] buffer = new byte[2];
         clientSocket.getInputStream().read(buffer);
 
-        // Converting unsigned byte to signed and then concatenate the numbers
         int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
 
         return port;
