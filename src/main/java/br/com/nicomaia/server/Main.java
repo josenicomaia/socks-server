@@ -11,6 +11,8 @@ import br.com.nicomaia.server.net.ResolverNotFoundException;
 import br.com.nicomaia.server.net.resolvers.DomainInetResolver;
 import br.com.nicomaia.server.net.resolvers.InetResolver;
 import br.com.nicomaia.server.net.resolvers.IpInetResolver;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 import reactor.netty.tcp.TcpServer;
@@ -119,12 +121,22 @@ public class Main {
                 .handle((inbound, outbound) -> {
                     System.out.println("New client connected to reactor server");
 
-                    // Use the ConnectHandler's reactive method to handle the connection
-                    ConnectHandler connectHandler = (ConnectHandler) handlers.get(CommandType.CONNECT);
+                    // Demonstração simplificada do servidor reativo
+                    // Em uma implementação completa, seria necessário implementar todo o protocolo SOCKS
+                    // de forma reativa, similar ao que é feito no método startThreadPoolServer
 
-                    // For simplicity, we're just demonstrating the reactor pattern
-                    // A full implementation would need to handle the SOCKS protocol
-                    return Mono.empty();
+                    // Criar uma resposta de sucesso para demonstrar o uso da API reativa
+                    ByteBuf responseBuffer = Unpooled.wrappedBuffer(new byte[] { 5, 0, 0, 1, 127, 0, 0, 1, 0, 80 });
+
+                    // Enviar a resposta e então iniciar a transferência de dados
+                    return outbound.send(Mono.just(responseBuffer))
+                            .then(
+                                // Implementação simplificada: apenas ecoar os dados recebidos
+                                inbound.receive()
+                                    .doOnNext(data -> System.out.println("Recebido: " + data.readableBytes() + " bytes"))
+                                    .flatMap(data -> outbound.send(Mono.just(data.retain())))
+                                    .then()
+                            );
                 })
                 .bindNow();
 
