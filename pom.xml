@@ -19,6 +19,16 @@
             <artifactId>lombok</artifactId>
             <version>1.18.34</version>
         </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+            <version>3.5.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor.netty</groupId>
+            <artifactId>reactor-netty-core</artifactId>
+            <version>1.1.0</version>
+        </dependency>
     </dependencies>
 
     <build>

@@ -28,10 +28,12 @@ public abstract class CommandResponse {
             stream.write(4);
         }
 
-        stream.writeBytes(client.getInetAddress().getAddress());
+        // Use the bound address from the command
+        stream.writeBytes(command.getAddress().getAddress());
 
-        stream.write((client.getPort() >>> 8) & 0xFF);
-        stream.write(client.getPort() & 0xFF);
+        // Use the bound port from the command
+        stream.write((command.getPort() >>> 8) & 0xFF);
+        stream.write(command.getPort() & 0xFF);
 
         return stream.toByteArray();
     }

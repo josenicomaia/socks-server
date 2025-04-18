@@ -10,22 +10,45 @@ import java.io.IOException;
 import java.net.Socket;
 
 public class ConnectHandler implements CommandHandler {
+    @Override
     public void handle(Socket client, Command command) {
+        Socket proxiedConnection = null;
         try {
-            Socket proxiedConnection = new Socket(command.getAddress(), command.getPort());
+            proxiedConnection = new Socket(command.getAddress(), command.getPort());
             var response = new SuccessCommandResponse(command, proxiedConnection);
 
             ClientServerTransfer transfer = new ClientServerTransfer(client, proxiedConnection);
-            transfer.start();
 
+            // Send response before starting the transfer to ensure the client gets the response
             sendResponse(client, response);
+
+            // Start the transfer after sending the response
+            transfer.start();
         } catch (IOException e) {
             e.printStackTrace();
 
             try {
+                // Close the proxied connection if it was created
+                if (proxiedConnection != null && !proxiedConnection.isClosed()) {
+                    try {
+                        proxiedConnection.close();
+                    } catch (IOException closeEx) {
+                        closeEx.printStackTrace();
+                    }
+                }
+
                 sendResponse(client, new FailureCommandResponse(command));
             } catch (IOException ex) {
-                throw new RuntimeException(ex);
+                ex.printStackTrace();
+
+                // Try to close the client socket if everything else failed
+                try {
+                    if (!client.isClosed()) {
+                        client.close();
+                    }
+                } catch (IOException closeEx) {
+                    closeEx.printStackTrace();
+                }
             }
         }
     }

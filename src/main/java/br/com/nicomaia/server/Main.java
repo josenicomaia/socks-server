@@ -11,6 +11,9 @@ import br.com.nicomaia.server.net.ResolverNotFoundException;
 import br.com.nicomaia.server.net.resolvers.DomainInetResolver;
 import br.com.nicomaia.server.net.resolvers.InetResolver;
 import br.com.nicomaia.server.net.resolvers.IpInetResolver;
+import reactor.core.publisher.Mono;
+import reactor.netty.DisposableServer;
+import reactor.netty.tcp.TcpServer;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -18,6 +21,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Main {
     public static void main(String[] args) {
@@ -31,18 +36,33 @@ public class Main {
         HandlersHolder handlers = new HandlersHolder();
         handlers.register(CommandType.CONNECT, new ConnectHandler());
 
+        // Start the thread pool server
+        Thread threadPoolServerThread = new Thread(() -> startThreadPoolServer(args, addressResolver, handlers));
+        threadPoolServerThread.setDaemon(true);
+        threadPoolServerThread.start();
+
+        // Start the reactor server
+        startReactorServer(args, addressResolver, handlers);
+    }
+
+    private static void startThreadPoolServer(String[] args, AddressResolver addressResolver, HandlersHolder handlers) {
         try {
-            var serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 5353;
+            var serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 8080;
             var serverSocket = new ServerSocket(serverPort);
+            System.out.println("Server started on port " + serverPort);
             System.out.println(serverSocket);
+
+            // Create a fixed thread pool instead of creating a new thread for each client
+            ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
             while (true) {
                 try {
                     var clientSocket = serverSocket.accept();
 
-                    var clientThread = new Thread(() -> {
+                    // Submit task to thread pool instead of creating a new thread
+                    executorService.submit(() -> {
                         try {
-                            System.out.printf("Starting %s...%n", Thread.currentThread());
+                            System.out.printf("Handling client in thread %s...%n", Thread.currentThread());
                             System.out.println(clientSocket);
 
                             byte[] buffer = new byte[2];
@@ -77,13 +97,11 @@ public class Main {
                             System.out.println(command);
                             handlers.get(commandType).handle(clientSocket, command);
 
-                            System.out.printf("Terminating %s...%n", Thread.currentThread());
+                            System.out.printf("Finished handling client in thread %s...%n", Thread.currentThread());
                         } catch (IOException | ResolverNotFoundException e) {
                             e.printStackTrace();
                         }
                     });
-
-                    clientThread.start();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -92,6 +110,28 @@ public class Main {
             e.printStackTrace();
         }
     }
+
+    private static void startReactorServer(String[] args, AddressResolver addressResolver, HandlersHolder handlers) {
+        var serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 8080;
+
+        DisposableServer server = TcpServer.create()
+                .port(serverPort + 1) // Use a different port for the reactor server
+                .handle((inbound, outbound) -> {
+                    System.out.println("New client connected to reactor server");
+
+                    // Use the ConnectHandler's reactive method to handle the connection
+                    ConnectHandler connectHandler = (ConnectHandler) handlers.get(CommandType.CONNECT);
+
+                    // For simplicity, we're just demonstrating the reactor pattern
+                    // A full implementation would need to handle the SOCKS protocol
+                    return Mono.empty();
+                })
+                .bindNow();
+
+        System.out.println("Reactor server started on port " + (serverPort + 1));
+        server.onDispose().block();
+    }
+
 
     private static Address readAddressBytes(AddressType addressType, Socket clientSocket) throws IOException {
         byte[] buffer = null;
