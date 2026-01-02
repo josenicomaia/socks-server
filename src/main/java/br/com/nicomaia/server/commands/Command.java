@@ -14,6 +14,6 @@ public class Command {
     private final byte socksVersion;
     private final CommandType commandType;
     private final AddressType addressType;
-    private final InetAddress address;
+    private final String address;
     private final int port;
 }

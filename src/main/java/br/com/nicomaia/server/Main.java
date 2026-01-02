@@ -1,128 +1,103 @@
 package br.com.nicomaia.server;
-
 import br.com.nicomaia.server.commands.Command;
 import br.com.nicomaia.server.commands.CommandType;
 import br.com.nicomaia.server.commands.handlers.ConnectHandler;
 import br.com.nicomaia.server.commands.handlers.HandlersHolder;
-import br.com.nicomaia.server.net.Address;
-import br.com.nicomaia.server.net.AddressResolver;
-import br.com.nicomaia.server.net.AddressType;
-import br.com.nicomaia.server.net.ResolverNotFoundException;
-import br.com.nicomaia.server.net.resolvers.DomainInetResolver;
-import br.com.nicomaia.server.net.resolvers.InetResolver;
-import br.com.nicomaia.server.net.resolvers.IpInetResolver;
-
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.util.HashMap;
-import java.util.Map;
+import reactor.core.publisher.Mono;
+import reactor.netty.NettyInbound;
+import reactor.netty.NettyOutbound;
+import reactor.netty.tcp.TcpServer;
 
 public class Main {
     public static void main(String[] args) {
-        Map<AddressType, InetResolver> resolvers = new HashMap<>();
-        resolvers.put(AddressType.IPV4, new IpInetResolver());
-        resolvers.put(AddressType.IPV6, new IpInetResolver());
-        resolvers.put(AddressType.DOMAIN_NAME, new DomainInetResolver());
-
-        AddressResolver addressResolver = new AddressResolver(resolvers);
-
         HandlersHolder handlers = new HandlersHolder();
         handlers.register(CommandType.CONNECT, new ConnectHandler());
-
-        try {
-            var serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 5353;
-            var serverSocket = new ServerSocket(serverPort);
-            System.out.println(serverSocket);
-
-            while (true) {
-                try {
-                    var clientSocket = serverSocket.accept();
-
-                    var clientThread = new Thread(() -> {
-                        try {
-                            System.out.printf("Starting %s...%n", Thread.currentThread());
-                            System.out.println(clientSocket);
-
-                            byte[] buffer = new byte[2];
-                            clientSocket.getInputStream().read(buffer);
-
-                            byte socksVersion = buffer[0];
-                            byte availableClientAuthTypes = buffer[1];
-
-                            buffer = new byte[availableClientAuthTypes];
-                            clientSocket.getInputStream().read(buffer);
-
-                            var loginNegotiationCommand = new LoginNegotiationCommand(socksVersion, availableClientAuthTypes, SupportedAuthType.valueOf(buffer));
-                            var loginNegotiationResult = new LoginNegotiationResult(socksVersion, SupportedAuthType.NO_AUTH);
-
-                            System.out.println(loginNegotiationCommand);
-                            System.out.println(loginNegotiationResult);
-
-                            clientSocket.getOutputStream().write(loginNegotiationResult.getResponse());
-
-                            buffer = new byte[4];
-                            clientSocket.getInputStream().read(buffer);
-
-                            socksVersion = buffer[0];
-                            CommandType commandType = CommandType.valueOf(buffer[1]);
-                            AddressType addressType = AddressType.valueOf(buffer[3]);
-
-                            Address address = readAddressBytes(addressType, clientSocket);
-                            InetAddress inetAddress = addressResolver.resolve(address);
-                            int port = readPort(clientSocket);
-
-                            var command = new Command(socksVersion, commandType, addressType, inetAddress, port);
-                            System.out.println(command);
-                            handlers.get(commandType).handle(clientSocket, command);
-
-                            System.out.printf("Terminating %s...%n", Thread.currentThread());
-                        } catch (IOException | ResolverNotFoundException e) {
-                            e.printStackTrace();
-                        }
-                    });
-
-                    clientThread.start();
-                } catch (IOException e) {
-                    e.printStackTrace();
+        int serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 5353;
+        TcpServer.create()
+                .port(serverPort)
+                .handle((in, out) -> handleSocks5Connection(in, out, handlers))
+                .bindNow()
+                .onDispose()
+                .block();
+    }
+    private static Mono<Void> handleSocks5Connection(NettyInbound in, NettyOutbound out, HandlersHolder handlers) {
+        return in.withConnection(connection -> {
+            connection.addHandlerLast(io.netty.handler.codec.socksx.v5.Socks5ServerEncoder.DEFAULT);
+            connection.addHandlerLast(new io.netty.handler.codec.socksx.v5.Socks5InitialRequestDecoder());
+        })
+        .receiveObject() // Flux<Object>
+        .switchOnFirst((signal, flux) -> {
+            if (signal.hasValue()) {
+                Object msg = signal.get();
+                if (msg instanceof io.netty.handler.codec.socksx.v5.Socks5InitialRequest) {
+                    return handleInitialRequest(in, out, (io.netty.handler.codec.socksx.v5.Socks5InitialRequest) msg, handlers, (reactor.core.publisher.Flux<Object>)flux);
+                } else {
+                    return Mono.error(new IllegalArgumentException("Expected Socks5InitialRequest but got " + msg.getClass()));
                 }
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+            return flux.then();
+        })
+        .then();
+    }
+
+    private static Mono<Void> handleInitialRequest(NettyInbound in, NettyOutbound out, io.netty.handler.codec.socksx.v5.Socks5InitialRequest request, HandlersHolder handlers, reactor.core.publisher.Flux<Object> upstream) {
+        // Authenticate (NO_AUTH)
+        return out.sendObject(new io.netty.handler.codec.socksx.v5.DefaultSocks5InitialResponse(io.netty.handler.codec.socksx.v5.Socks5AuthMethod.NO_AUTH))
+                .then()
+                .then(Mono.defer(() -> {
+                    // Prepare for Command
+                    in.withConnection(connection -> {
+                        connection.addHandlerLast(new io.netty.handler.codec.socksx.v5.Socks5CommandRequestDecoder());
+                    });
+                    
+                    // We must continue using 'upstream'.
+                    // skip(1) to skip the InitialRequest already consumed.
+                    return upstream
+                            .skip(1)
+                            .switchOnFirst((signal, flux) -> {
+                                if (signal.hasValue()) {
+                                    Object msg = signal.get();
+                                     if (msg instanceof io.netty.handler.codec.socksx.v5.Socks5CommandRequest) {
+                                         // Pass the rest of the flux (excluding command) to the handler
+                                         // But switchOnFirst passes flux starting with the signal.
+                                         // So 'flux' contains CommandRequest + rest.
+                                         // We want to pass 'rest' to handleCommandRequest.
+                                         // So handleCommandRequest will skip(1) or we skip(1) here?
+                                         // Better pass 'flux' and let handleCommandRequest consume or skip the command.
+                                         // Actually, handleCommandRequest needs the 'CommandRequest' object to know where to connect.
+                                         // So we extract it.
+                                         return handleCommandRequest(in, out, (io.netty.handler.codec.socksx.v5.Socks5CommandRequest) msg, handlers, flux);
+                                     } 
+                                }
+                                return flux.then();
+                            })
+                            .then();
+                }));
+    }
+
+    private static Mono<Void> handleCommandRequest(NettyInbound in, NettyOutbound out, io.netty.handler.codec.socksx.v5.Socks5CommandRequest request, HandlersHolder handlers, reactor.core.publisher.Flux<Object> upstream) {
+        br.com.nicomaia.server.commands.CommandType type = br.com.nicomaia.server.commands.CommandType.valueOf((byte) request.type().byteValue());
+        br.com.nicomaia.server.net.AddressType addrType = br.com.nicomaia.server.net.AddressType.valueOf((byte) request.dstAddrType().byteValue());
+        
+        Command command = new Command(
+            (byte) 5, // SOCKS version 5
+            type,
+            addrType,
+            request.dstAddr(),
+            request.dstPort()
+        );
+        
+        var handler = handlers.get(type);
+        if (handler != null) {
+            // upstream contains [CommandRequest, ... data ...]
+            // We want [ ... data ... ]
+            return handler.handle(in, out, command, upstream.skip(1));
+        } else {
+             // Unsupported command
+             return out.sendObject(new io.netty.handler.codec.socksx.v5.DefaultSocks5CommandResponse(
+                     io.netty.handler.codec.socksx.v5.Socks5CommandStatus.COMMAND_UNSUPPORTED,
+                     request.dstAddrType()))
+                     .then();
         }
-    }
-
-    private static Address readAddressBytes(AddressType addressType, Socket clientSocket) throws IOException {
-        byte[] buffer = null;
-
-        if (AddressType.IPV6 == addressType) {
-            buffer = new byte[16];
-        } else if (AddressType.IPV4 == addressType) {
-            buffer = new byte[4];
-        } else if (AddressType.DOMAIN_NAME == addressType) {
-            buffer = new byte[readDomainLength(clientSocket)];
-        }
-
-        clientSocket.getInputStream().read(buffer);
-
-        return new Address(buffer, addressType);
-    }
-
-    private static byte readDomainLength(Socket clientSocket) throws IOException {
-        byte[] domainLengthBuffer = new byte[1];
-        clientSocket.getInputStream().read(domainLengthBuffer);
-
-        return domainLengthBuffer[0];
-    }
-
-    private static int readPort(Socket clientSocket) throws IOException {
-        byte[] buffer = new byte[2];
-        clientSocket.getInputStream().read(buffer);
-
-        // Converting unsigned byte to signed and then concatenate the numbers
-        int port = ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
-
-        return port;
     }
 }
