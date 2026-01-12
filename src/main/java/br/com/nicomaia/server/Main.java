@@ -12,7 +12,9 @@ public class Main {
     public static void main(String[] args) {
         HandlersHolder handlers = new HandlersHolder();
         handlers.register(CommandType.CONNECT, new ConnectHandler());
+
         int serverPort = (args.length > 0) ? Integer.parseInt(args[0]) : 5353;
+
         TcpServer.create()
                 .port(serverPort)
                 .handle((in, out) -> handleSocks5Connection(in, out, handlers))
@@ -67,7 +69,7 @@ public class Main {
                                          // Actually, handleCommandRequest needs the 'CommandRequest' object to know where to connect.
                                          // So we extract it.
                                          return handleCommandRequest(in, out, (io.netty.handler.codec.socksx.v5.Socks5CommandRequest) msg, handlers, flux);
-                                     } 
+                                     }
                                 }
                                 return flux.then();
                             })
