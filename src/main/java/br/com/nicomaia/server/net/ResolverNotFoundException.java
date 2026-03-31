@@ -1,4 +1,3 @@
 package br.com.nicomaia.server.net;
 
-public class ResolverNotFoundException extends Exception {
-}
+public class ResolverNotFoundException extends Exception {}
