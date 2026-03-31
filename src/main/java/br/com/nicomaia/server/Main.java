@@ -21,6 +21,8 @@ import java.util.Map;
 
 public class Main {
     public static void main(String[] args) {
+        UpdateChecker.checkAsync();
+
         Map<AddressType, InetResolver> resolvers = new HashMap<>();
         resolvers.put(AddressType.IPV4, new IpInetResolver());
         resolvers.put(AddressType.IPV6, new IpInetResolver());
