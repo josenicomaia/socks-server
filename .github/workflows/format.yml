@@ -1,15 +1,12 @@
-name: Auto Format
+name: Format
 
 on:
-  pull_request:
-    types: [ closed ]
-    branches: [ master ]
+  workflow_call:
 
 jobs:
   format:
     name: Apply Code Style
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
     permissions:
       contents: write
     steps:
