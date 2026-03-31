@@ -4,3 +4,4 @@ server.iml
 
 google-java-format.jar
 google-java-format
+integration-tests-output.log
