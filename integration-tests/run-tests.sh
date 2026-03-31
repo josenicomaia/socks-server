@@ -115,6 +115,74 @@ else
     fail "Large response" "received only $BYTES bytes"
 fi
 
+# --- Test 8: Concurrent connections (virtual threads stress) ---
+echo ""
+echo "── Test 8: 20 concurrent connections ──"
+CONCURRENT_OK=0
+CONCURRENT_TOTAL=20
+PIDS=""
+TMPDIR_CONC=$(mktemp -d)
+
+for i in $(seq 1 $CONCURRENT_TOTAL); do
+    (
+        code=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "$PROXY" --max-time 15 "http://httpbin.org/get?req=$i" 2>/dev/null || echo "000")
+        echo "$code" > "$TMPDIR_CONC/result_$i"
+    ) &
+    PIDS="$PIDS $!"
+done
+
+# Wait for all background processes
+for pid in $PIDS; do
+    wait "$pid" 2>/dev/null
+done
+
+for i in $(seq 1 $CONCURRENT_TOTAL); do
+    code=$(cat "$TMPDIR_CONC/result_$i" 2>/dev/null || echo "000")
+    if [ "$code" = "200" ]; then
+        CONCURRENT_OK=$((CONCURRENT_OK + 1))
+    fi
+done
+rm -rf "$TMPDIR_CONC"
+
+if [ "$CONCURRENT_OK" -eq "$CONCURRENT_TOTAL" ]; then
+    pass "All $CONCURRENT_TOTAL concurrent requests returned 200"
+else
+    fail "Concurrent connections" "$CONCURRENT_OK/$CONCURRENT_TOTAL succeeded"
+fi
+
+# --- Test 9: Unreachable host (graceful error handling) ---
+echo ""
+echo "── Test 9: Unreachable host (proxy should not crash) ──"
+# Connect to a non-routable IP — proxy should handle gracefully
+curl -4 -s -o /dev/null --proxy "$PROXY" --max-time 5 http://192.0.2.1/ 2>/dev/null || true
+# If we can still make a request after, the proxy survived
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "$PROXY" --max-time 10 http://httpbin.org/get 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "200" ]; then
+    pass "Proxy survived unreachable host and still works"
+else
+    fail "Unreachable host recovery" "proxy stopped responding (got $HTTP_CODE)"
+fi
+
+# --- Test 10: Header preservation ---
+echo ""
+echo "── Test 10: Custom headers pass through proxy ──"
+BODY=$(curl -4 -s --proxy "$PROXY" --max-time 10 \
+    -H "X-Custom-Test: socks5-proxy-check" \
+    -H "X-Trace-Token: integration-42" \
+    http://httpbin.org/headers 2>/dev/null || echo "")
+HEADER_OK=0
+if echo "$BODY" | grep -qi "socks5-proxy-check"; then
+    HEADER_OK=$((HEADER_OK + 1))
+fi
+if echo "$BODY" | grep -qi "integration-42"; then
+    HEADER_OK=$((HEADER_OK + 1))
+fi
+if [ "$HEADER_OK" -eq 2 ]; then
+    pass "Both custom headers preserved through proxy"
+else
+    fail "Header preservation" "only $HEADER_OK/2 headers found in response"
+fi
+
 # ─── Summary ──────────────────────────────────────────────
 
 echo ""
