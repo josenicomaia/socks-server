@@ -5,8 +5,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.logging.Logger;
 
 public class UpdateChecker {
+
+  private static final Logger logger = Logger.getLogger(UpdateChecker.class.getName());
 
   private static final String CURRENT_VERSION = loadVersion();
   private static final String GITHUB_REPO = "josenicomaia/socks-server";
@@ -35,22 +38,20 @@ public class UpdateChecker {
               try {
                 String latestVersion = fetchLatestVersion();
                 if (latestVersion != null && isNewer(latestVersion, CURRENT_VERSION)) {
-                  System.out.println();
-                  System.out.println(
-                      "╔════════════════════════════════════════════════════════════╗");
-                  System.out.println(
-                      "║  A new version of socks-server is available: "
+                  logger.info(
+                      "\n"
+                          + "╔════════════════════════════════════════════════════════════╗\n"
+                          + "║  A new version of socks-server is available: "
                           + padRight(latestVersion, 13)
-                          + "║");
-                  System.out.println(
-                      "║  You are running version: " + padRight(CURRENT_VERSION, 33) + "║");
-                  System.out.println(
-                      "║                                                            ║");
-                  System.out.println(
-                      "║  https://github.com/" + padRight(GITHUB_REPO + "/releases", 39) + "║");
-                  System.out.println(
-                      "╚════════════════════════════════════════════════════════════╝");
-                  System.out.println();
+                          + "║\n"
+                          + "║  You are running version: "
+                          + padRight(CURRENT_VERSION, 33)
+                          + "║\n"
+                          + "║                                                            ║\n"
+                          + "║  https://github.com/"
+                          + padRight(GITHUB_REPO + "/releases", 39)
+                          + "║\n"
+                          + "╚════════════════════════════════════════════════════════════╝");
                 }
               } catch (Exception ignored) {
                 // Silently fail — update check should never block or crash the app

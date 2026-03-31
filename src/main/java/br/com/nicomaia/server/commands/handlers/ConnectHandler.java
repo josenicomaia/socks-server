@@ -29,7 +29,7 @@ public class ConnectHandler implements CommandHandler {
       try {
         sendResponse(client, new FailureCommandResponse(command));
       } catch (IOException ex) {
-        throw new RuntimeException(ex);
+        logger.log(Level.WARNING, "Failed to send error response", ex);
       }
     }
   }

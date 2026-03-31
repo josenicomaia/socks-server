@@ -28,6 +28,9 @@ public enum ResponseType {
     return Arrays.stream(values())
         .filter(commandType -> commandType.number == number)
         .findFirst()
-        .get();
+        .orElseThrow(
+            () ->
+                new IllegalArgumentException(
+                    "Unknown response type: 0x" + String.format("%02X", number)));
   }
 }
