@@ -1,0 +1,38 @@
+name: Auto Format
+
+on:
+  pull_request:
+    types: [ closed ]
+    branches: [ master ]
+
+jobs:
+  format:
+    name: Apply Code Style
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download google-java-format
+        run: |
+          curl -sSL -o google-java-format \
+            https://github.com/google/google-java-format/releases/download/v1.35.0/google-java-format_linux-x86-64
+          chmod +x google-java-format
+
+      - name: Format code
+        run: |
+          find src -name "*.java" -exec ./google-java-format --replace {} +
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet && echo "✅ No formatting changes needed" && exit 0
+          git add -A
+          git commit -m "style: apply google-java-format"
+          git push

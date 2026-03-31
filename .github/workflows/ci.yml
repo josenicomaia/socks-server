@@ -2,14 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [ '**' ]
   pull_request:
     branches: [ master ]
 
 jobs:
+  lint:
+    name: Code Style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download google-java-format
+        run: |
+          curl -sSL -o google-java-format \
+            https://github.com/google/google-java-format/releases/download/v1.35.0/google-java-format_linux-x86-64
+          chmod +x google-java-format
+
+      - name: Check code formatting
+        run: |
+          UNFORMATTED=$(find src -name "*.java" -exec ./google-java-format --dry-run {} + 2>/dev/null || true)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "❌ The following files are not formatted:"
+            echo "$UNFORMATTED"
+            echo ""
+            echo "Run locally: java -jar google-java-format.jar --replace \$(find src -name '*.java')"
+            exit 1
+          fi
+          echo "✅ All files are properly formatted"
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +59,7 @@ jobs:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: unit-tests
+    if: github.ref == 'refs/heads/master' || github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
