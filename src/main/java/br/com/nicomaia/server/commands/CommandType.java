@@ -23,6 +23,9 @@ public enum CommandType {
     return Arrays.stream(values())
         .filter(commandType -> commandType.number == number)
         .findFirst()
-        .get();
+        .orElseThrow(
+            () ->
+                new IllegalArgumentException(
+                    "Unknown command type: 0x" + String.format("%02X", number)));
   }
 }
