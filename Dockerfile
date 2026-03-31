@@ -35,4 +35,4 @@ ENV JAVA_HOME=/usr/lib/jvm/zulu26
 WORKDIR /app
 COPY --from=build /app/target/server-*.jar server.jar
 EXPOSE 5353
-ENTRYPOINT ["java", "-jar", "server.jar"]
+ENTRYPOINT ["java", "-jar", "server.jar", "--no-tui"]

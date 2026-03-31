@@ -22,14 +22,14 @@ fail() {
 
 wait_for_server() {
     echo "⏳ Waiting for socks-server to be ready..."
-    for i in $(seq 1 30); do
+    for i in $(seq 1 5); do
         if curl -s --proxy "$PROXY" --max-time 2 -o /dev/null http://example.com 2>/dev/null; then
             echo "✅ Server is ready!"
             return 0
         fi
         sleep 1
     done
-    echo "❌ Server did not start within 30s"
+    echo "❌ Server did not start within 5s"
     exit 1
 }
 
