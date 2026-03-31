@@ -183,6 +183,48 @@ else
     fail "Header preservation" "only $HEADER_OK/2 headers found in response"
 fi
 
+# ─── Negative Tests ───────────────────────────────────────
+
+# --- Test 11: Dead proxy (wrong port) ---
+echo ""
+echo "── Test 11: Dead SOCKS proxy (wrong port) ──"
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5://socks-server:9999" --max-time 5 http://httpbin.org/get 2>/dev/null || true)
+if [ "$HTTP_CODE" != "200" ]; then
+    pass "Connection to dead proxy correctly failed (got $HTTP_CODE)"
+else
+    fail "Dead proxy" "expected connection failure, got HTTP 200"
+fi
+
+# --- Test 12: Non-existent proxy host ---
+echo ""
+echo "── Test 12: Non-existent SOCKS proxy host ──"
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5://ghost-proxy:5353" --max-time 5 http://httpbin.org/get 2>/dev/null || true)
+if [ "$HTTP_CODE" != "200" ]; then
+    pass "Connection to non-existent proxy correctly failed (got $HTTP_CODE)"
+else
+    fail "Non-existent proxy" "expected connection failure, got HTTP 200"
+fi
+
+# --- Test 13: Proxy alive but target refuses connection ---
+echo ""
+echo "── Test 13: Target server refuses connection ──"
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "$PROXY" --max-time 5 http://127.0.0.1:1 2>/dev/null || true)
+if [ "$HTTP_CODE" != "200" ]; then
+    pass "Refused connection handled gracefully (got $HTTP_CODE)"
+else
+    fail "Refused connection" "expected failure, got HTTP 200"
+fi
+
+# Verify proxy still works after negative tests
+echo ""
+echo "── Sanity check: proxy still alive after negative tests ──"
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "$PROXY" --max-time 10 http://httpbin.org/get 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "200" ]; then
+    pass "Proxy survived all negative tests"
+else
+    fail "Post-negative sanity" "proxy stopped responding (got $HTTP_CODE)"
+fi
+
 # ─── Summary ──────────────────────────────────────────────
 
 echo ""
