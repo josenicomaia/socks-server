@@ -71,87 +71,94 @@ public class Dashboard {
     String bytesUp = formatBytes(metrics.bytesUploaded());
     String bytesDown = formatBytes(metrics.bytesDownloaded());
 
+    // Column layout constants
+    // Inner content is WIDTH (74) visible chars between the ║ borders
+    // Stats layout: 2-space indent, 10-char label, value, gap to col2 at position 32,
+    //               10-char label, value, pad to WIDTH
+    int COL2 = 32; // second column starts at visible position 32
+
     // Header
     sb.append(DIM).append("╔").append("═".repeat(WIDTH)).append("╗").append(RESET).append("\n");
-    sb.append(DIM).append("║").append(RESET);
-    sb.append(BOLD).append(CYAN).append("  socks-server").append(RESET);
-    sb.append(DIM).append(" v").append(version).append(RESET);
-    sb.append(padTo("port: " + port, WIDTH - 16 - version.length() - 2));
-    sb.append(DIM).append("║").append(RESET).append("\n");
-    sb.append(DIM).append("║").append(" ".repeat(WIDTH)).append("║").append(RESET).append("\n");
+    appendRow(sb, buildHeaderLine(version, port));
+    appendRow(sb, " ".repeat(WIDTH));
 
-    // Stats
-    sb.append(DIM).append("║").append(RESET);
-    sb.append(label("  Status")).append(GREEN).append(BOLD).append("online").append(RESET);
-    sb.append(label("          Uptime")).append(WHITE).append(uptime).append(RESET);
-    sb.append(padRight("", WIDTH - 42 - uptime.length()));
-    sb.append(DIM).append("║").append(RESET).append("\n");
+    // Stats row 1: Status / Uptime
+    String status1Left = "  Status  " + GREEN + BOLD + "online" + RESET;
+    int status1LeftLen = 10 + 6; // "  Status  " + "online"
+    String status1Right = "Uptime  " + WHITE + uptime + RESET;
+    int status1RightLen = 8 + uptime.length();
+    appendStatsRow(sb, status1Left, status1LeftLen, status1Right, status1RightLen, COL2);
 
-    sb.append(DIM).append("║").append(RESET);
-    sb.append(label("  Active")).append(YELLOW).append(BOLD).append(activeConns).append(RESET);
-    sb.append(" conns");
-    sb.append(label("       Total")).append(WHITE).append(totalConns).append(RESET);
-    sb.append(" conns");
-    int usedChars = 36 + activeConns.length() + totalConns.length();
-    sb.append(padRight("", WIDTH - usedChars));
-    sb.append(DIM).append("║").append(RESET).append("\n");
+    // Stats row 2: Active / Total
+    String activeVal = YELLOW + BOLD + activeConns + RESET + " conns";
+    int activeValLen = activeConns.length() + 6;
+    String status2Left = "  Active  " + activeVal;
+    int status2LeftLen = 10 + activeValLen;
+    String totalVal = WHITE + totalConns + RESET + " conns";
+    int totalValLen = totalConns.length() + 6;
+    String status2Right = "Total   " + totalVal;
+    int status2RightLen = 8 + totalValLen;
+    appendStatsRow(sb, status2Left, status2LeftLen, status2Right, status2RightLen, COL2);
 
-    sb.append(DIM).append("║").append(RESET);
-    sb.append(label("  Transfer")).append(CYAN).append("↑ ").append(bytesUp).append(RESET);
-    sb.append(label("       ↓ ")).append(CYAN).append(bytesDown).append(RESET);
-    int transferUsed = 25 + bytesUp.length() + bytesDown.length();
-    sb.append(padRight("", WIDTH - transferUsed));
-    sb.append(DIM).append("║").append(RESET).append("\n");
+    // Stats row 3: Transfer up / down
+    String upVal = CYAN + "\u2191 " + bytesUp + RESET;
+    int upValLen = 2 + bytesUp.length();
+    String status3Left = "  Transfer" + "  " + upVal;
+    int status3LeftLen = 12 + upValLen;
+    String downVal = CYAN + "\u2193   " + bytesDown + RESET;
+    int downValLen = 4 + bytesDown.length();
+    String status3Right = downVal;
+    int status3RightLen = downValLen;
+    appendStatsRow(sb, status3Left, status3LeftLen, status3Right, status3RightLen, COL2);
 
-    sb.append(DIM).append("║").append(" ".repeat(WIDTH)).append("║").append(RESET).append("\n");
+    appendRow(sb, " ".repeat(WIDTH));
 
     // Separator
     sb.append(DIM)
-        .append("║──────────────────────────────────────────────────────────────────────────║")
+        .append("║")
+        .append("─".repeat(WIDTH))
+        .append("║")
         .append(RESET)
         .append("\n");
-    sb.append(DIM).append("║").append(RESET);
-    sb.append(BOLD).append("  Recent Connections").append(RESET);
-    sb.append(padRight("", WIDTH - 20));
-    sb.append(DIM).append("║").append(RESET).append("\n");
-    sb.append(DIM).append("║").append(" ".repeat(WIDTH)).append("║").append(RESET).append("\n");
+    appendRow(sb, BOLD + "  Recent Connections" + RESET + " ".repeat(WIDTH - 20));
+    appendRow(sb, " ".repeat(WIDTH));
 
-    // Table header
+    // Table header - fixed columns: [2+10=12] [8] [32] [22] = 74
+    String tableHeader =
+        String.format("  %-10s%-8s%-32s%-22s", "TIME", "STATUS", "DESTINATION", "BYTES");
     sb.append(DIM).append("║").append(RESET);
-    sb.append(DIM)
-        .append("  TIME       STATUS  DESTINATION                     BYTES               ")
-        .append(RESET);
+    sb.append(DIM).append(tableHeader).append(RESET);
     sb.append(DIM).append("║").append(RESET).append("\n");
 
-    // Connection rows
+    // Connection rows — same column widths as header
     List<ConnectionRecord> connections = metrics.recentConnections();
     int rows = Math.min(connections.size(), MAX_VISIBLE_CONNECTIONS);
 
     for (int i = 0; i < rows; i++) {
       ConnectionRecord conn = connections.get(i);
       sb.append(DIM).append("║").append(RESET);
-      sb.append("  ").append(conn.time().format(TIME_FMT));
-      sb.append("   ");
 
+      // TIME column: 2-space indent + time padded to 10 = 12 visible chars
+      sb.append("  ").append(String.format("%-10s", conn.time().format(TIME_FMT)));
+
+      // STATUS column: 8 chars
       if (conn.status() == ConnectionRecord.Status.OK) {
-        sb.append(GREEN).append("OK  ").append(RESET);
+        sb.append(GREEN).append(String.format("%-8s", "OK")).append(RESET);
       } else {
-        sb.append(RED).append("FAIL").append(RESET);
+        sb.append(RED).append(String.format("%-8s", "FAIL")).append(RESET);
       }
-      sb.append("    ");
 
+      // DESTINATION column: 32 chars
       String dest = truncate(conn.destination(), 31);
-      sb.append(dest).append(padRight("", 31 - dest.length()));
-      sb.append(" ");
+      sb.append(String.format("%-32s", dest));
 
+      // BYTES column: 22 chars
       if (conn.status() == ConnectionRecord.Status.OK) {
         String transfer =
-            "↑" + formatBytes(conn.bytesUp()) + " ↓" + formatBytes(conn.bytesDown());
-        sb.append(CYAN).append(transfer).append(RESET);
-        sb.append(padRight("", 19 - transfer.length()));
+            "\u2191" + formatBytes(conn.bytesUp()) + " \u2193" + formatBytes(conn.bytesDown());
+        sb.append(CYAN).append(String.format("%-22s", transfer)).append(RESET);
       } else {
-        sb.append(DIM).append("-").append(RESET);
-        sb.append(padRight("", 18));
+        sb.append(DIM).append(String.format("%-22s", "-")).append(RESET);
       }
 
       sb.append(DIM).append("║").append(RESET).append("\n");
@@ -170,18 +177,37 @@ public class Dashboard {
     out.flush();
   }
 
-  private String label(String text) {
-    return DIM + text + "  " + RESET;
+  private void appendRow(StringBuilder sb, String content) {
+    sb.append(DIM).append("║").append(RESET);
+    sb.append(content);
+    sb.append(DIM).append("║").append(RESET).append("\n");
   }
 
-  private String padTo(String text, int totalWidth) {
-    int padding = Math.max(0, totalWidth - text.length());
-    return " ".repeat(padding) + text;
+  private void appendStatsRow(
+      StringBuilder sb,
+      String left,
+      int leftVisibleLen,
+      String right,
+      int rightVisibleLen,
+      int col2Start) {
+    sb.append(DIM).append("║").append(RESET);
+    sb.append(left);
+    int gap = Math.max(1, col2Start - leftVisibleLen);
+    sb.append(" ".repeat(gap));
+    sb.append(right);
+    int totalUsed = leftVisibleLen + gap + rightVisibleLen;
+    int remaining = Math.max(0, WIDTH - totalUsed);
+    sb.append(" ".repeat(remaining));
+    sb.append(DIM).append("║").append(RESET).append("\n");
   }
 
-  private String padRight(String text, int totalWidth) {
-    int padding = Math.max(0, totalWidth - text.length());
-    return text + " ".repeat(padding);
+  private String buildHeaderLine(String version, int port) {
+    String left = BOLD + CYAN + "  socks-server" + RESET + DIM + " v" + version + RESET;
+    int leftLen = 14 + 2 + version.length(); // "  socks-server" + " v" + version
+    String portStr = "port: " + port;
+    int rightLen = portStr.length();
+    int gap = Math.max(1, WIDTH - leftLen - rightLen);
+    return left + " ".repeat(gap) + portStr;
   }
 
   private String truncate(String text, int maxLen) {
