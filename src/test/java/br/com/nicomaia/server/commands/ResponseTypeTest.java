@@ -29,7 +29,7 @@ class ResponseTypeTest {
 
   @Test
   void shouldThrowForUnknownResponseType() {
-    assertThrows(NoSuchElementException.class, () -> ResponseType.valueOf((byte) 0xFF));
+    assertThrows(IllegalArgumentException.class, () -> ResponseType.valueOf((byte) 0xFF));
   }
 
   @Test
