@@ -6,6 +6,7 @@ import br.com.nicomaia.server.commands.handlers.HandlersHolder;
 import br.com.nicomaia.server.net.Address;
 import br.com.nicomaia.server.net.AddressResolver;
 import br.com.nicomaia.server.net.AddressType;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.Socket;
@@ -66,6 +67,17 @@ public class SocksProtocolHandler {
       handlers.get(commandType).handle(clientSocket, command);
     } catch (Exception e) {
       logger.log(Level.WARNING, "Error handling SOCKS connection", e);
+      closeQuietly(clientSocket);
+    }
+  }
+
+  private void closeQuietly(Socket socket) {
+    try {
+      if (!socket.isClosed()) {
+        socket.close();
+      }
+    } catch (IOException e) {
+      logger.log(Level.FINE, "Error closing socket", e);
     }
   }
 }

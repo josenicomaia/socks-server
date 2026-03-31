@@ -2,7 +2,6 @@ package br.com.nicomaia.server.commands;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.NoSuchElementException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -26,13 +25,11 @@ class CommandTypeTest {
 
   @Test
   void shouldThrowForUnknownCommandType() {
-    assertThrows(NoSuchElementException.class, () -> CommandType.valueOf((byte) 0xFF));
+    assertThrows(IllegalArgumentException.class, () -> CommandType.valueOf((byte) 0xFF));
   }
 
   @ParameterizedTest
-  @EnumSource(
-      value = CommandType.class,
-      names = {"CONNECT", "BIND", "UDP_ASSOCIATE"})
+  @EnumSource(value = CommandType.class, names = {"CONNECT", "BIND", "UDP_ASSOCIATE"})
   void shouldRoundTripByteToEnum(CommandType type) {
     assertEquals(type, CommandType.valueOf(type.getNumber()));
   }

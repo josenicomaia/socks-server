@@ -4,73 +4,53 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ClientServerTransfer {
   private static final int DEFAULT_BUFFER_SIZE = 8192;
-  private Thread clientToServerThread;
-  private Thread serverToClientThread;
+  private static final Logger logger = Logger.getLogger(ClientServerTransfer.class.getName());
+
+  private final Socket client;
+  private final Socket server;
 
   public ClientServerTransfer(Socket client, Socket server) {
-    prepareTransfers(client, server);
-  }
-
-  private void prepareTransfers(Socket client, Socket server) {
-    clientToServerThread =
-        Thread.ofVirtual()
-            .name(client + " => " + server)
-            .unstarted(
-                () -> {
-                  try {
-                    while (client.isConnected()) {
-                      transferTo(client.getInputStream(), server.getOutputStream());
-                      Thread.sleep(500);
-                    }
-                  } catch (IOException | InterruptedException e) {
-                    e.printStackTrace();
-
-                    try {
-                      client.close();
-                      server.close();
-                    } catch (IOException ex) {
-                      throw new RuntimeException(ex);
-                    }
-                  }
-                });
-
-    serverToClientThread =
-        Thread.ofVirtual()
-            .name(client + " <= " + server)
-            .unstarted(
-                () -> {
-                  try {
-                    while (server.isConnected()) {
-                      transferTo(server.getInputStream(), client.getOutputStream());
-                      Thread.sleep(500);
-                    }
-                  } catch (IOException | InterruptedException e) {
-                    e.printStackTrace();
-
-                    try {
-                      client.close();
-                      server.close();
-                    } catch (IOException ex) {
-                      throw new RuntimeException(ex);
-                    }
-                  }
-                });
-  }
-
-  private void transferTo(InputStream in, OutputStream out) throws IOException {
-    byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
-    int read;
-
-    while ((read = in.read(buffer, 0, DEFAULT_BUFFER_SIZE)) >= 0) {
-      out.write(buffer, 0, read);
-    }
+    this.client = client;
+    this.server = server;
   }
 
   public void start() {
-    serverToClientThread.start();
-    clientToServerThread.start();
+    Thread.ofVirtual().name(client + " => " + server).start(() -> transfer(client, server));
+
+    Thread.ofVirtual().name(client + " <= " + server).start(() -> transfer(server, client));
+  }
+
+  private void transfer(Socket source, Socket destination) {
+    try {
+      InputStream in = source.getInputStream();
+      OutputStream out = destination.getOutputStream();
+      byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
+      int read;
+
+      while ((read = in.read(buffer, 0, DEFAULT_BUFFER_SIZE)) >= 0) {
+        out.write(buffer, 0, read);
+        out.flush();
+      }
+    } catch (IOException e) {
+      logger.log(Level.FINE, "Transfer ended: " + e.getMessage());
+    } finally {
+      closeQuietly(client);
+      closeQuietly(server);
+    }
+  }
+
+  private void closeQuietly(Socket socket) {
+    try {
+      if (!socket.isClosed()) {
+        socket.close();
+      }
+    } catch (IOException e) {
+      logger.log(Level.FINE, "Error closing socket", e);
+    }
   }
 }
