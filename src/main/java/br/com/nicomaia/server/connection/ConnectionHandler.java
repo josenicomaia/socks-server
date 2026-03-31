@@ -1,6 +1,7 @@
 package br.com.nicomaia.server.connection;
 
 import br.com.nicomaia.server.config.ServerConfig;
+import br.com.nicomaia.server.metrics.Metrics;
 import br.com.nicomaia.server.protocol.SocksProtocolHandler;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -14,9 +15,11 @@ public class ConnectionHandler {
 
   private final ServerConfig config;
   private final SocksProtocolHandler protocolHandler;
+  private final Metrics metrics;
 
-  public ConnectionHandler(ServerConfig config) {
+  public ConnectionHandler(ServerConfig config, Metrics metrics) {
     this.config = config;
+    this.metrics = metrics;
     this.protocolHandler = new SocksProtocolHandler(config.addressResolver(), config.handlers());
   }
 
@@ -28,16 +31,22 @@ public class ConnectionHandler {
         try {
           Socket clientSocket = serverSocket.accept();
 
+          metrics.connectionOpened();
+
           Thread.ofVirtual()
               .name("client-handler-", clientSocket.hashCode())
               .start(
                   () -> {
-                    logger.fine(() -> "Starting " + Thread.currentThread());
-                    logger.fine(() -> clientSocket.toString());
+                    try {
+                      logger.fine(() -> "Starting " + Thread.currentThread());
+                      logger.fine(() -> clientSocket.toString());
 
-                    protocolHandler.handle(clientSocket);
+                      protocolHandler.handle(clientSocket);
 
-                    logger.fine(() -> "Terminating " + Thread.currentThread());
+                      logger.fine(() -> "Terminating " + Thread.currentThread());
+                    } finally {
+                      metrics.connectionClosed();
+                    }
                   });
         } catch (IOException e) {
           logger.log(Level.WARNING, "Error accepting connection", e);
