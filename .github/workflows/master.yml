@@ -1,0 +1,26 @@
+name: Master
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  format:
+    name: Format
+    uses: ./.github/workflows/format.yml
+    permissions:
+      contents: write
+
+  version-bump:
+    name: Version Bump
+    needs: format
+    uses: ./.github/workflows/version-bump.yml
+    permissions:
+      contents: write
+
+  tests:
+    name: Tests
+    needs: version-bump
+    uses: ./.github/workflows/tests.yml
+    with:
+      ref: master
