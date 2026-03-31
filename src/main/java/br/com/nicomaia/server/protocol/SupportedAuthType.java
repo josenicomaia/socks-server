@@ -1,4 +1,4 @@
-package br.com.nicomaia.server;
+package br.com.nicomaia.server.protocol;
 
 import java.util.Arrays;
 import java.util.HashSet;

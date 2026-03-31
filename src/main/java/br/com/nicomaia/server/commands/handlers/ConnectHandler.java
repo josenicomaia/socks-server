@@ -8,8 +8,13 @@ import br.com.nicomaia.server.commands.SuccessCommandResponse;
 
 import java.io.IOException;
 import java.net.Socket;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ConnectHandler implements CommandHandler {
+
+    private static final Logger logger = Logger.getLogger(ConnectHandler.class.getName());
+
     public void handle(Socket client, Command command) {
         try {
             Socket proxiedConnection = new Socket(command.address(), command.port());
@@ -20,7 +25,7 @@ public class ConnectHandler implements CommandHandler {
 
             sendResponse(client, response);
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.log(Level.WARNING, "Connect failed to " + command.address() + ":" + command.port(), e);
 
             try {
                 sendResponse(client, new FailureCommandResponse(command));
@@ -31,7 +36,7 @@ public class ConnectHandler implements CommandHandler {
     }
 
     private void sendResponse(Socket client, CommandResponse response) throws IOException {
-        System.out.println(response);
+        logger.info(response.toString());
 
         client.getOutputStream().write(response.getBytes(client));
         client.getOutputStream().flush();

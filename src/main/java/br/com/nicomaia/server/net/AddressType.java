@@ -21,6 +21,6 @@ public enum AddressType {
         return Arrays.stream(values())
                 .filter(commandType -> commandType.typeCode == typeCode)
                 .findFirst()
-                .get();
+                .orElseThrow(() -> new IllegalArgumentException("Unknown address type: 0x" + String.format("%02X", typeCode)));
     }
 }

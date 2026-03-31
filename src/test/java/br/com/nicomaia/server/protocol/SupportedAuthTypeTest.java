@@ -1,4 +1,4 @@
-package br.com.nicomaia.server;
+package br.com.nicomaia.server.protocol;
 
 import org.junit.jupiter.api.Test;
 
