@@ -40,7 +40,9 @@ public class Main {
                 try {
                     var clientSocket = serverSocket.accept();
 
-                    var clientThread = new Thread(() -> {
+                    Thread.ofVirtual()
+                            .name("client-handler-", clientSocket.hashCode())
+                            .start(() -> {
                         try {
                             System.out.printf("Starting %s...%n", Thread.currentThread());
                             System.out.println(clientSocket);
@@ -83,7 +85,6 @@ public class Main {
                         }
                     });
 
-                    clientThread.start();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }

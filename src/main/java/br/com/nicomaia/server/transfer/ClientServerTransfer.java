@@ -15,7 +15,9 @@ public class ClientServerTransfer {
     }
 
     private void prepareTransfers(Socket client, Socket server) {
-        clientToServerThread = new Thread(() -> {
+        clientToServerThread = Thread.ofVirtual()
+                .name(client + " => " + server)
+                .unstarted(() -> {
             try {
                 while (client.isConnected()) {
                     transferTo(client.getInputStream(), server.getOutputStream());
@@ -31,9 +33,11 @@ public class ClientServerTransfer {
                     throw new RuntimeException(ex);
                 }
             }
-        }, client + " => " + server);
+        });
 
-        serverToClientThread = new Thread(() -> {
+        serverToClientThread = Thread.ofVirtual()
+                .name(client + " <= " + server)
+                .unstarted(() -> {
             try {
                 while (server.isConnected()) {
                     transferTo(server.getInputStream(), client.getOutputStream());
@@ -49,7 +53,7 @@ public class ClientServerTransfer {
                     throw new RuntimeException(ex);
                 }
             }
-        }, client + " <= " + server);
+        });
     }
 
     private void transferTo(InputStream in, OutputStream out) throws IOException {

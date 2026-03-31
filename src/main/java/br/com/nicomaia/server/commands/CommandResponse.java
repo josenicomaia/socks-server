@@ -1,12 +1,10 @@
 package br.com.nicomaia.server.commands;
 
 import br.com.nicomaia.server.net.AddressType;
-import lombok.ToString;
 
 import java.io.ByteArrayOutputStream;
 import java.net.Socket;
 
-@ToString
 public abstract class CommandResponse {
     private final Command command;
     private final ResponseType responseType;
@@ -19,12 +17,12 @@ public abstract class CommandResponse {
     public byte[] getBytes(Socket client) {
         // https://datatracker.ietf.org/doc/html/rfc1928#section-6
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        stream.write(command.getSocksVersion());
+        stream.write(command.socksVersion());
         stream.write(responseType.getNumber());
         stream.write(0x00);
-        stream.write(command.getAddressType().getTypeCode());
+        stream.write(command.addressType().getTypeCode());
 
-        if (command.getAddressType() == AddressType.DOMAIN_NAME) {
+        if (command.addressType() == AddressType.DOMAIN_NAME) {
             stream.write(4);
         }
 

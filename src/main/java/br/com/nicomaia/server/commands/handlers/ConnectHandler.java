@@ -12,7 +12,7 @@ import java.net.Socket;
 public class ConnectHandler implements CommandHandler {
     public void handle(Socket client, Command command) {
         try {
-            Socket proxiedConnection = new Socket(command.getAddress(), command.getPort());
+            Socket proxiedConnection = new Socket(command.address(), command.port());
             var response = new SuccessCommandResponse(command, proxiedConnection);
 
             ClientServerTransfer transfer = new ClientServerTransfer(client, proxiedConnection);
