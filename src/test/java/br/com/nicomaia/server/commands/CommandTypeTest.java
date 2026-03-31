@@ -29,7 +29,9 @@ class CommandTypeTest {
   }
 
   @ParameterizedTest
-  @EnumSource(value = CommandType.class, names = {"CONNECT", "BIND", "UDP_ASSOCIATE"})
+  @EnumSource(
+      value = CommandType.class,
+      names = {"CONNECT", "BIND", "UDP_ASSOCIATE"})
   void shouldRoundTripByteToEnum(CommandType type) {
     assertEquals(type, CommandType.valueOf(type.getNumber()));
   }
