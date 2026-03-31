@@ -1,0 +1,20 @@
+services:
+  socks-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5353:5353"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/5353' 2>/dev/null || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  integration-tests:
+    build:
+      context: ./integration-tests
+      dockerfile: Dockerfile
+    depends_on:
+      socks-server:
+        condition: service_healthy
