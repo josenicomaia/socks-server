@@ -25,7 +25,7 @@ class AddressTypeTest {
 
     @Test
     void shouldThrowForUnknownAddressType() {
-        assertThrows(NoSuchElementException.class, () -> AddressType.valueOf((byte) 0xFF));
+        assertThrows(IllegalArgumentException.class, () -> AddressType.valueOf((byte) 0xFF));
     }
 
     @Test
