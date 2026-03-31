@@ -38,10 +38,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build and run integration tests
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build socks-server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: socks-server-socks-server:latest
+          cache-from: type=gha,scope=socks-server
+          cache-to: type=gha,scope=socks-server,mode=max
+
+      - name: Build integration-tests image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./integration-tests
+          load: true
+          tags: socks-server-integration-tests:latest
+          cache-from: type=gha,scope=integration-tests
+          cache-to: type=gha,scope=integration-tests,mode=max
+
+      - name: Run integration tests
         run: |
           docker compose -f docker-compose.test.yml up \
-            --build \
+            --no-build \
             --abort-on-container-exit \
             --exit-code-from integration-tests
 
