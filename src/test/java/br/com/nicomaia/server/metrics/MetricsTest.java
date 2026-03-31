@@ -82,8 +82,7 @@ class MetricsTest {
   @Test
   void shouldReturnImmutableCopyOfRecentConnections() {
     metrics.addConnectionRecord(
-        new ConnectionRecord(
-            LocalTime.now(), "test.com:443", ConnectionRecord.Status.OK, 0, 0));
+        new ConnectionRecord(LocalTime.now(), "test.com:443", ConnectionRecord.Status.OK, 0, 0));
 
     List<ConnectionRecord> copy = metrics.recentConnections();
     assertThrows(UnsupportedOperationException.class, () -> copy.clear());

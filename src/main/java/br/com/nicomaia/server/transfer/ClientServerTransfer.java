@@ -23,13 +23,9 @@ public class ClientServerTransfer {
   }
 
   public void start() {
-    Thread.ofVirtual()
-        .name(client + " => " + server)
-        .start(() -> transfer(client, server, true));
+    Thread.ofVirtual().name(client + " => " + server).start(() -> transfer(client, server, true));
 
-    Thread.ofVirtual()
-        .name(client + " <= " + server)
-        .start(() -> transfer(server, client, false));
+    Thread.ofVirtual().name(client + " <= " + server).start(() -> transfer(server, client, false));
   }
 
   private void transfer(Socket source, Socket destination, boolean isUpload) {

@@ -36,6 +36,7 @@ class DashboardTest {
     assertEquals("00:00:00", Dashboard.formatUptime(Duration.ZERO));
     assertEquals("00:01:30", Dashboard.formatUptime(Duration.ofSeconds(90)));
     assertEquals("01:00:00", Dashboard.formatUptime(Duration.ofHours(1)));
-    assertEquals("25:30:15", Dashboard.formatUptime(Duration.ofHours(25).plusMinutes(30).plusSeconds(15)));
+    assertEquals(
+        "25:30:15", Dashboard.formatUptime(Duration.ofHours(25).plusMinutes(30).plusSeconds(15)));
   }
 }

@@ -114,12 +114,7 @@ public class Dashboard {
     appendRow(sb, " ".repeat(WIDTH));
 
     // Separator
-    sb.append(DIM)
-        .append("║")
-        .append("─".repeat(WIDTH))
-        .append("║")
-        .append(RESET)
-        .append("\n");
+    sb.append(DIM).append("║").append("─".repeat(WIDTH)).append("║").append(RESET).append("\n");
     appendRow(sb, BOLD + "  Recent Connections" + RESET + " ".repeat(WIDTH - 20));
     appendRow(sb, " ".repeat(WIDTH));
 
