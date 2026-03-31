@@ -8,9 +8,22 @@ import java.time.Duration;
 
 public class UpdateChecker {
 
-    private static final String CURRENT_VERSION = "1.0.0";
+    private static final String CURRENT_VERSION = loadVersion();
     private static final String GITHUB_REPO = "josenicomaia/socks-server";
     private static final String RELEASES_URL = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest";
+
+    private static String loadVersion() {
+        try (var stream = UpdateChecker.class.getClassLoader().getResourceAsStream("version.properties")) {
+            if (stream == null) return "0.0.0";
+            var props = new java.util.Properties();
+            props.load(stream);
+            String version = props.getProperty("version", "0.0.0");
+            // Strip -SNAPSHOT suffix for comparison
+            return version.replace("-SNAPSHOT", "");
+        } catch (Exception e) {
+            return "0.0.0";
+        }
+    }
 
     public static void checkAsync() {
         Thread.ofVirtual().name("update-checker").start(() -> {
