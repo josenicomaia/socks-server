@@ -29,12 +29,12 @@ mvn clean package -DskipTests
 java -jar target/server-*.jar
 ```
 
-By default, the server starts on port **1080** with the TUI dashboard enabled.
+By default, the server starts on port **5353** with the TUI dashboard enabled.
 
 ### Custom Port
 
 ```bash
-java -jar target/server-*.jar 5353
+java -jar target/server-*.jar 1080
 ```
 
 ## Flags
@@ -46,11 +46,11 @@ java -jar target/server-*.jar 5353
 ### Examples
 
 ```bash
-# Default: TUI dashboard enabled, port 1080
+# Default: TUI dashboard enabled, port 5353
 java -jar target/server-*.jar
 
 # Custom port with TUI
-java -jar target/server-*.jar 5353
+java -jar target/server-*.jar 1080
 
 # Headless mode (no TUI) — logs go to stdout
 java -jar target/server-*.jar --no-tui
@@ -80,7 +80,7 @@ When the TUI is **disabled** (`--no-tui`), logs go to **stdout** as usual.
 docker build -t socks-server .
 
 # Run (TUI is disabled automatically via --no-tui in Dockerfile)
-docker run -p 1080:1080 socks-server
+docker run -p 5353:5353 socks-server
 ```
 
 ## Testing
