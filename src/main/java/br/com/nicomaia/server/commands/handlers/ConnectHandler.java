@@ -26,28 +26,45 @@ public class ConnectHandler implements CommandHandler {
   public void handle(Socket client, Command command) {
     String destination = command.address().getHostName() + ":" + command.port();
 
+    Socket proxiedConnection;
     try {
-      Socket proxiedConnection = new Socket(command.address(), command.port());
-      var response = new SuccessCommandResponse(command, proxiedConnection);
-
-      ClientServerTransfer transfer = new ClientServerTransfer(client, proxiedConnection, metrics);
-      transfer.start();
-
-      sendResponse(client, response);
-
-      metrics.addConnectionRecord(
-          new ConnectionRecord(LocalTime.now(), destination, ConnectionRecord.Status.OK, 0, 0));
+      proxiedConnection = new Socket(command.address(), command.port());
     } catch (IOException e) {
       logger.log(Level.WARNING, "Connect failed to " + destination, e);
+      recordFailure(destination);
+      trySendFailure(client, command);
+      return;
+    }
 
-      metrics.addConnectionRecord(
-          new ConnectionRecord(LocalTime.now(), destination, ConnectionRecord.Status.FAIL, 0, 0));
+    // Send the SOCKS success reply before starting the relay: otherwise a destination
+    // that writes immediately could have its bytes forwarded to the client ahead of the
+    // reply, corrupting the protocol stream.
+    try {
+      sendResponse(client, new SuccessCommandResponse(command, proxiedConnection));
+    } catch (IOException e) {
+      logger.log(Level.WARNING, "Failed to send success response for " + destination, e);
+      closeQuietly(proxiedConnection);
+      recordFailure(destination);
+      return;
+    }
 
-      try {
-        sendResponse(client, new FailureCommandResponse(command));
-      } catch (IOException ex) {
-        logger.log(Level.WARNING, "Failed to send error response", ex);
-      }
+    ClientServerTransfer transfer = new ClientServerTransfer(client, proxiedConnection, metrics);
+    transfer.start();
+
+    metrics.addConnectionRecord(
+        new ConnectionRecord(LocalTime.now(), destination, ConnectionRecord.Status.OK, 0, 0));
+  }
+
+  private void recordFailure(String destination) {
+    metrics.addConnectionRecord(
+        new ConnectionRecord(LocalTime.now(), destination, ConnectionRecord.Status.FAIL, 0, 0));
+  }
+
+  private void trySendFailure(Socket client, Command command) {
+    try {
+      sendResponse(client, new FailureCommandResponse(command));
+    } catch (IOException ex) {
+      logger.log(Level.WARNING, "Failed to send error response", ex);
     }
   }
 
@@ -56,5 +73,15 @@ public class ConnectHandler implements CommandHandler {
 
     client.getOutputStream().write(response.getBytes(client));
     client.getOutputStream().flush();
+  }
+
+  private void closeQuietly(Socket socket) {
+    try {
+      if (!socket.isClosed()) {
+        socket.close();
+      }
+    } catch (IOException e) {
+      logger.log(Level.FINE, "Error closing socket", e);
+    }
   }
 }
