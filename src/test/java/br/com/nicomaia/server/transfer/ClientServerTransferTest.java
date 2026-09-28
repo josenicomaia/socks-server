@@ -58,4 +58,32 @@ class ClientServerTransferTest {
       assertTrue(metrics.bytesDownloaded() >= downBefore + download.length);
     }
   }
+
+  @Test
+  void shouldCloseBothSocketsWhenInterrupted() throws Exception {
+    InetAddress loopback = InetAddress.getLoopbackAddress();
+
+    try (ServerSocket clientListener = new ServerSocket(0, 50, loopback);
+        ServerSocket serverListener = new ServerSocket(0, 50, loopback)) {
+
+      Socket transferClientSide = new Socket(loopback, clientListener.getLocalPort());
+      Socket testClientSide = clientListener.accept();
+      Socket transferServerSide = new Socket(loopback, serverListener.getLocalPort());
+      Socket testServerSide = serverListener.accept();
+
+      ClientServerTransfer transfer =
+          new ClientServerTransfer(transferClientSide, transferServerSide, Metrics.instance());
+      Thread starter = Thread.ofVirtual().start(transfer::start);
+
+      starter.interrupt();
+      starter.join(3000);
+
+      assertFalse(starter.isAlive(), "start() must return when interrupted");
+      assertTrue(transferClientSide.isClosed(), "Client socket must be closed on interrupt");
+      assertTrue(transferServerSide.isClosed(), "Server socket must be closed on interrupt");
+
+      testClientSide.close();
+      testServerSide.close();
+    }
+  }
 }

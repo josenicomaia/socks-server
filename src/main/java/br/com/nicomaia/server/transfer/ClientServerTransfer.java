@@ -39,6 +39,10 @@ public class ClientServerTransfer {
       upload.join();
       download.join();
     } catch (InterruptedException e) {
+      // Tear the relay down so the connection doesn't outlive start(), which would leave the
+      // caller's active-connection accounting out of sync with open sockets.
+      closeQuietly(client);
+      closeQuietly(server);
       Thread.currentThread().interrupt();
     }
   }
