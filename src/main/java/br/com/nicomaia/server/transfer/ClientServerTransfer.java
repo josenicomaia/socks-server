@@ -23,9 +23,28 @@ public class ClientServerTransfer {
   }
 
   public void start() {
-    Thread.ofVirtual().name(client + " => " + server).start(() -> transfer(client, server, true));
+    Thread upload =
+        Thread.ofVirtual()
+            .name(client + " => " + server)
+            .start(() -> transfer(client, server, true));
 
-    Thread.ofVirtual().name(client + " <= " + server).start(() -> transfer(server, client, false));
+    Thread download =
+        Thread.ofVirtual()
+            .name(client + " <= " + server)
+            .start(() -> transfer(server, client, false));
+
+    // Block until both directions finish so the caller can treat the connection as active
+    // for its whole lifetime (e.g. for accurate active-connection metrics).
+    try {
+      upload.join();
+      download.join();
+    } catch (InterruptedException e) {
+      // Tear the relay down so the connection doesn't outlive start(), which would leave the
+      // caller's active-connection accounting out of sync with open sockets.
+      closeQuietly(client);
+      closeQuietly(server);
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void transfer(Socket source, Socket destination, boolean isUpload) {

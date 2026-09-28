@@ -6,6 +6,7 @@ import br.com.nicomaia.server.commands.handlers.HandlersHolder;
 import br.com.nicomaia.server.net.Address;
 import br.com.nicomaia.server.net.AddressResolver;
 import br.com.nicomaia.server.net.AddressType;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -16,6 +17,9 @@ import java.util.logging.Logger;
 public class SocksProtocolHandler {
 
   private static final Logger logger = Logger.getLogger(SocksProtocolHandler.class.getName());
+
+  private static final byte SOCKS_VERSION = 0x05;
+  private static final byte NO_ACCEPTABLE_METHODS = (byte) 0xFF;
 
   private final AddressResolver addressResolver;
   private final HandlersHolder handlers;
@@ -30,28 +34,39 @@ public class SocksProtocolHandler {
       InputStream in = clientSocket.getInputStream();
 
       // --- Auth Negotiation ---
-      byte[] buffer = new byte[2];
-      in.read(buffer);
+      byte[] buffer = SocketReader.readFully(in, 2);
 
       byte socksVersion = buffer[0];
       byte availableClientAuthTypes = buffer[1];
 
-      buffer = new byte[availableClientAuthTypes];
-      in.read(buffer);
+      if (socksVersion != SOCKS_VERSION) {
+        logger.info("Rejecting connection with unsupported SOCKS version: " + socksVersion);
+        closeQuietly(clientSocket);
+        return;
+      }
+
+      buffer = SocketReader.readFully(in, availableClientAuthTypes & 0xFF);
 
       var authRequest =
           new AuthRequest(
               socksVersion, availableClientAuthTypes, SupportedAuthType.valueOf(buffer));
-      var authResponse = new AuthResponse(socksVersion, SupportedAuthType.NO_AUTH);
-
       logger.info(authRequest.toString());
+
+      if (!authRequest.supportedAuthTypes().contains(SupportedAuthType.NO_AUTH)) {
+        logger.info("Client did not offer NO_AUTH; rejecting with NO ACCEPTABLE METHODS");
+        clientSocket.getOutputStream().write(new byte[] {socksVersion, NO_ACCEPTABLE_METHODS});
+        clientSocket.getOutputStream().flush();
+        closeQuietly(clientSocket);
+        return;
+      }
+
+      var authResponse = new AuthResponse(socksVersion, SupportedAuthType.NO_AUTH);
       logger.info(authResponse.toString());
 
       clientSocket.getOutputStream().write(authResponse.toBytes());
 
       // --- Command ---
-      buffer = new byte[4];
-      in.read(buffer);
+      buffer = SocketReader.readFully(in, 4);
 
       socksVersion = buffer[0];
       CommandType commandType = CommandType.valueOf(buffer[1]);
@@ -70,6 +85,8 @@ public class SocksProtocolHandler {
       closeQuietly(clientSocket);
     }
   }
+
+
 
   private void closeQuietly(Socket socket) {
     try {
