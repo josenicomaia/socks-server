@@ -6,7 +6,6 @@ import br.com.nicomaia.server.commands.handlers.HandlersHolder;
 import br.com.nicomaia.server.net.Address;
 import br.com.nicomaia.server.net.AddressResolver;
 import br.com.nicomaia.server.net.AddressType;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -85,8 +84,6 @@ public class SocksProtocolHandler {
       closeQuietly(clientSocket);
     }
   }
-
-
 
   private void closeQuietly(Socket socket) {
     try {
