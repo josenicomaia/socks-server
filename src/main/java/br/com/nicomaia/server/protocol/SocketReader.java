@@ -33,7 +33,7 @@ public class SocketReader {
     return readFully(in, 1)[0] & 0xFF;
   }
 
-  private static byte[] readFully(InputStream in, int length) throws IOException {
+  static byte[] readFully(InputStream in, int length) throws IOException {
     byte[] buffer = in.readNBytes(length);
     if (buffer.length != length) {
       throw new EOFException("Unexpected EOF: expected " + length + " bytes, got " + buffer.length);
