@@ -48,11 +48,12 @@ public class ConnectHandler implements CommandHandler {
       return;
     }
 
-    ClientServerTransfer transfer = new ClientServerTransfer(client, proxiedConnection, metrics);
-    transfer.start();
-
+    // Record before the relay: transfer.start() blocks for the connection's whole lifetime.
     metrics.addConnectionRecord(
         new ConnectionRecord(LocalTime.now(), destination, ConnectionRecord.Status.OK, 0, 0));
+
+    ClientServerTransfer transfer = new ClientServerTransfer(client, proxiedConnection, metrics);
+    transfer.start();
   }
 
   private void recordFailure(String destination) {
