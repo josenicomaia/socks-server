@@ -32,11 +32,37 @@ public class Socks5Authenticator {
     UNSUPPORTED_VERSION,
     NO_ACCEPTABLE_METHOD,
     UNSUPPORTED_SUBNEGOTIATION_VERSION,
-    INVALID_CREDENTIALS;
+    INVALID_CREDENTIALS,
+    /** Credentials rejected without being compared: the client's guess budget is exhausted. */
+    THROTTLED;
 
     public boolean isAccepted() {
       return this == ACCEPTED;
     }
+  }
+
+  /**
+   * Gate around each credential comparison, so callers can cap how many passwords a client gets
+   * to try (see {@link HandshakeThrottle}).
+   */
+  public interface AttemptBudget {
+
+    AttemptBudget UNLIMITED =
+        new AttemptBudget() {
+          @Override
+          public boolean tryReserve() {
+            return true;
+          }
+
+          @Override
+          public void complete(boolean credentialsValid) {}
+        };
+
+    /** @return whether a comparison may happen; if not, the credentials are rejected unseen */
+    boolean tryReserve();
+
+    /** Called exactly once after each successful {@link #tryReserve()}. */
+    void complete(boolean credentialsValid);
   }
 
   /** {@code null} when authentication is disabled. */
@@ -60,6 +86,11 @@ public class Socks5Authenticator {
   }
 
   public Outcome authenticate(InputStream in, OutputStream out) throws IOException {
+    return authenticate(in, out, AttemptBudget.UNLIMITED);
+  }
+
+  public Outcome authenticate(InputStream in, OutputStream out, AttemptBudget budget)
+      throws IOException {
     byte[] header = SocketReader.readFully(in, 2);
     if (header[0] != SOCKS_VERSION) {
       return Outcome.UNSUPPORTED_VERSION; // not SOCKS5: don't answer in a protocol it doesn't speak
@@ -79,19 +110,22 @@ public class Socks5Authenticator {
 
     reply(out, new AuthResponse(SOCKS_VERSION, requiredMethod));
 
-    return isAuthenticationRequired() ? verifyCredentials(in, out) : Outcome.ACCEPTED;
+    return isAuthenticationRequired() ? verifyCredentials(in, out, budget) : Outcome.ACCEPTED;
   }
 
-  private Outcome verifyCredentials(InputStream in, OutputStream out) throws IOException {
+  private Outcome verifyCredentials(InputStream in, OutputStream out, AttemptBudget budget)
+      throws IOException {
     var request = UsernamePasswordRequest.readFrom(in);
 
     Outcome outcome;
     if (request.version() != UsernamePasswordResponse.VERSION) {
       outcome = Outcome.UNSUPPORTED_SUBNEGOTIATION_VERSION;
-    } else if (!credentials.matches(request.username(), request.password())) {
-      outcome = Outcome.INVALID_CREDENTIALS;
+    } else if (!budget.tryReserve()) {
+      outcome = Outcome.THROTTLED;
     } else {
-      outcome = Outcome.ACCEPTED;
+      boolean valid = credentials.matches(request.username(), request.password());
+      budget.complete(valid);
+      outcome = valid ? Outcome.ACCEPTED : Outcome.INVALID_CREDENTIALS;
     }
 
     out.write(UsernamePasswordResponse.forOutcome(outcome.isAccepted()).toBytes());

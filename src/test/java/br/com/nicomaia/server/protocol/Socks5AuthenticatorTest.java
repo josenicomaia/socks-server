@@ -84,6 +84,55 @@ class Socks5AuthenticatorTest {
   }
 
   @Test
+  void shouldRejectEvenValidCredentialsWithoutComparingWhenBudgetIsExhausted()
+      throws IOException {
+    var budget = new RecordingBudget(false);
+    var out = new ByteArrayOutputStream();
+    var in = negotiationAndCredentials(new byte[] {0x02}, "alice", "s3cret");
+
+    Outcome result = authenticator.authenticate(in, out, budget);
+
+    assertEquals(Outcome.THROTTLED, result);
+    assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x01}, out.toByteArray());
+    assertEquals(0, budget.completions, "no comparison may happen without a reservation");
+  }
+
+  @Test
+  void shouldReportComparisonResultToBudget() throws IOException {
+    var valid = new RecordingBudget(true);
+    var invalid = new RecordingBudget(true);
+
+    authenticator.authenticate(
+        negotiationAndCredentials(new byte[] {0x02}, "alice", "s3cret"),
+        new ByteArrayOutputStream(),
+        valid);
+    authenticator.authenticate(
+        negotiationAndCredentials(new byte[] {0x02}, "alice", "wrong"),
+        new ByteArrayOutputStream(),
+        invalid);
+
+    assertEquals(1, valid.completions);
+    assertEquals(Boolean.TRUE, valid.lastResult);
+    assertEquals(1, invalid.completions);
+    assertEquals(Boolean.FALSE, invalid.lastResult);
+  }
+
+  @Test
+  void shouldNotSpendBudgetOnMalformedSubNegotiation() throws IOException {
+    var budget = new RecordingBudget(true);
+    var payload = new ByteArrayOutputStream();
+    payload.writeBytes(new byte[] {0x05, 0x01, 0x02});
+    payload.writeBytes(new byte[] {0x07, 0x01, 'a', 0x01, 'b'}); // bogus VER
+
+    Outcome result =
+        authenticator.authenticate(
+            new ByteArrayInputStream(payload.toByteArray()), new ByteArrayOutputStream(), budget);
+
+    assertEquals(Outcome.UNSUPPORTED_SUBNEGOTIATION_VERSION, result);
+    assertEquals(0, budget.reservations);
+  }
+
+  @Test
   void shouldRejectInvalidCredentials() throws IOException {
     var out = new ByteArrayOutputStream();
     var in = negotiationAndCredentials(new byte[] {0x02}, "alice", "wrong-password");
@@ -188,5 +237,28 @@ class Socks5AuthenticatorTest {
     payload.write(passwordBytes);
 
     return new ByteArrayInputStream(payload.toByteArray());
+  }
+
+  private static final class RecordingBudget implements Socks5Authenticator.AttemptBudget {
+    private final boolean grant;
+    private int reservations;
+    private int completions;
+    private Boolean lastResult;
+
+    RecordingBudget(boolean grant) {
+      this.grant = grant;
+    }
+
+    @Override
+    public boolean tryReserve() {
+      reservations++;
+      return grant;
+    }
+
+    @Override
+    public void complete(boolean credentialsValid) {
+      completions++;
+      lastResult = credentialsValid;
+    }
   }
 }

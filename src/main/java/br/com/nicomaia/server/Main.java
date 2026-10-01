@@ -7,6 +7,7 @@ import br.com.nicomaia.server.metrics.Metrics;
 import br.com.nicomaia.server.tui.Dashboard;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Main {
@@ -51,7 +52,8 @@ public class Main {
 
     // Goes to stderr through the console handler, or to the log file when the TUI is enabled
     // (the dashboard clears the screen, so it repeats the warning as a banner instead).
-    startupWarning(config).ifPresent(logger::warning);
+    startupWarning(config)
+        .ifPresent(warning -> logger.logp(Level.WARNING, Main.class.getName(), "main", warning));
 
     if (tuiEnabled) {
       var dashboard = new Dashboard(config.port(), loadVersion(), metrics);

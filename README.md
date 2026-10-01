@@ -43,11 +43,13 @@ Clients must send their whole handshake (greeting, credentials and command reque
 **10 seconds** in total — a deadline across all reads, so dripping bytes doesn't extend it;
 connections that miss it are closed. Connecting to the destination is bounded separately (10 s).
 
-To slow down online brute force, each client address may have at most **64 handshakes in
-progress** at once, and after **5 failed logins within a minute** it is refused until that minute
-has passed. Clients behind the same NAT address share these limits. Rejected handshakes and
-blocked addresses are logged as warnings with the client address (never the submitted username or
-password), so they can also feed tools such as fail2ban.
+To slow down online brute force, each client — an IPv4 address, or an IPv6 /64 — gets at most
+**5 password checks per minute**, counting checks still in progress, so opening connections in
+parallel doesn't buy extra guesses. Once 5 have failed, the client is refused until a minute has
+passed since its first failure. Each client may also have at most **64 handshakes in progress**
+at once. Clients behind the same NAT address share these limits. Rejected handshakes, blocked
+clients and clients hitting the concurrency cap are logged as warnings with the client address
+(never the submitted username or password), so they can also feed tools such as fail2ban.
 
 > **Upgrading from 1.0.x:** authentication used to be disabled (`NO_AUTH` was always accepted).
 > Existing deployments must now set `SOCKS_USERNAME` and `SOCKS_PASSWORD` — including

@@ -182,7 +182,7 @@ class SocksProtocolHandlerTest {
 
   @Test
   void shouldRefuseAddressAfterRepeatedFailedLogins() throws Exception {
-    var throttle = new HandshakeThrottle(8, 2, Duration.ofMinutes(1), Clock.systemUTC());
+    var throttle = new HandshakeThrottle(8, 2, Duration.ofMinutes(1), 10_000, Clock.systemUTC());
     try (var harness = Harness.builder().throttle(throttle).start()) {
       for (int attempt = 0; attempt < 2; attempt++) {
         try (Socket client = harness.connectClient()) {

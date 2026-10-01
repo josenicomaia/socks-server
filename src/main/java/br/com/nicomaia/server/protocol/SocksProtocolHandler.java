@@ -71,9 +71,20 @@ public class SocksProtocolHandler {
 
   public void handle(Socket clientSocket) {
     InetAddress peer = clientSocket.getInetAddress();
-    if (!throttle.tryAcquire(peer)) {
-      // Not logged above FINE: a blocked or flooding host would otherwise flood the log.
-      logger.fine(() -> "Refusing connection from " + peer + ": handshake limit reached");
+    var admission = throttle.tryAcquire(peer);
+    if (!admission.isAdmitted()) {
+      if (admission == HandshakeThrottle.Admission.CAPACITY_REACHED) {
+        // Once per client per window, so operators can diagnose bursts or busy NAT addresses
+        // without a flooding host flooding the log.
+        logger.warning(
+            "Refusing connections from "
+                + peer
+                + ": too many concurrent handshakes (further refusals in the next "
+                + throttle.window()
+                + " are logged at FINE)");
+      } else {
+        logger.fine(() -> "Refusing connection from " + peer + ": " + admission);
+      }
       closeQuietly(clientSocket);
       return;
     }
@@ -95,15 +106,19 @@ public class SocksProtocolHandler {
     try {
       InputStream in = new DeadlineInputStream(clientSocket, handshakeTimeout, clock);
 
-      var outcome = authenticator.authenticate(in, clientSocket.getOutputStream());
+      var outcome =
+          authenticator.authenticate(in, clientSocket.getOutputStream(), attemptBudget(peer));
       if (!outcome.isAccepted()) {
-        // Never log the username: a password pasted into the username field would leak.
-        logger.warning(
-            "Rejected SOCKS handshake from " + clientSocket.getRemoteSocketAddress() + ": " + outcome);
-        if (outcome == Socks5Authenticator.Outcome.INVALID_CREDENTIALS
-            && throttle.recordFailure(peer)) {
+        if (outcome == Socks5Authenticator.Outcome.THROTTLED) {
+          // The block itself was already logged once; repeating it per attempt would flood.
+          logger.fine(() -> "Rejected SOCKS handshake from " + peer + ": " + outcome);
+        } else {
+          // Never log the username: a password pasted into the username field would leak.
           logger.warning(
-              "Blocking " + peer + " for " + throttle.window() + " after repeated failed logins");
+              "Rejected SOCKS handshake from "
+                  + clientSocket.getRemoteSocketAddress()
+                  + ": "
+                  + outcome);
         }
         closeQuietly(clientSocket);
         return null;
@@ -128,6 +143,26 @@ public class SocksProtocolHandler {
     }
     closeQuietly(clientSocket);
     return null;
+  }
+
+  /** Each password comparison spends one of the client's guesses in the throttle window. */
+  private Socks5Authenticator.AttemptBudget attemptBudget(InetAddress peer) {
+    return new Socks5Authenticator.AttemptBudget() {
+      @Override
+      public boolean tryReserve() {
+        return throttle.tryBeginAttempt(peer);
+      }
+
+      @Override
+      public void complete(boolean credentialsValid) {
+        if (credentialsValid) {
+          throttle.recordSuccess(peer);
+        } else if (throttle.recordFailure(peer)) {
+          logger.warning(
+              "Blocking " + peer + " for " + throttle.window() + " after repeated failed logins");
+        }
+      }
+    };
   }
 
   /** @return the parsed command, or {@code null} if the request header is invalid. */

@@ -1,21 +1,30 @@
 package br.com.nicomaia.server.protocol;
 
+import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Per-client-address limits on unauthenticated handshakes:
+ * Per-client limits on unauthenticated handshakes. A client is an IPv4 address or an IPv6 /64
+ * (the smallest block normally assigned to one subscriber, so rotating addresses inside it gains
+ * nothing).
  *
  * <ul>
- *   <li>at most {@code maxConcurrentHandshakes} handshakes in flight per address, so one host
- *       can't pin an unbounded number of sockets in the handshake phase or parallelise
- *       password guesses;
- *   <li>after {@code maxFailures} failed credential checks within {@code window}, the address is
- *       refused until that window has elapsed since its first counted failure.
+ *   <li>At most {@code maxConcurrentHandshakes} handshakes in flight per client, so one host
+ *       can't pin an unbounded number of sockets in the handshake phase.
+ *   <li>At most {@code maxFailures} credential checks per {@code window}, counting failed ones
+ *       and those still being evaluated. A check must be reserved with {@link
+ *       #tryBeginAttempt(InetAddress)} before the password is compared, so opening many
+ *       connections in parallel doesn't buy extra guesses. Once {@code maxFailures} checks have
+ *       failed, the client is refused until the window that began with its first counted
+ *       failure has elapsed.
  * </ul>
  *
  * <p>Clients sharing one address (NAT) share these limits; legitimate clients only notice them
@@ -23,62 +32,102 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class HandshakeThrottle {
 
+  /** Result of {@link #tryAcquire(InetAddress)}. */
+  public enum Admission {
+    ADMITTED,
+    /** Refused: too many failed logins in the current window (reported by recordFailure). */
+    BLOCKED,
+    /** Refused: concurrent handshake cap reached; first refusal for this client in the window. */
+    CAPACITY_REACHED,
+    /** Refused: concurrent handshake cap reached; already reported in the current window. */
+    AT_CAPACITY;
+
+    public boolean isAdmitted() {
+      return this == ADMITTED;
+    }
+  }
+
   /**
    * Generous on purpose: a legitimate client (a browser behind the proxy, or several hosts
    * behind one NAT address) opens many connections at once, and each spends only milliseconds in
-   * the handshake. It still bounds how many password guesses one address can have in flight.
+   * the handshake. Password guesses are bounded separately by {@code maxFailures}.
    */
   static final int DEFAULT_MAX_CONCURRENT_HANDSHAKES = 64;
+
   static final int DEFAULT_MAX_FAILURES = 5;
   static final Duration DEFAULT_WINDOW = Duration.ofMinutes(1);
 
-  /** Above this many tracked addresses, idle entries are purged on the next access. */
-  private static final int PURGE_THRESHOLD = 10_000;
+  /** Above this many tracked clients, idle entries are purged... */
+  static final int DEFAULT_PURGE_THRESHOLD = 10_000;
+
+  /** ...but at most this often, so the O(n) sweep never runs on every connection. */
+  static final Duration PURGE_INTERVAL = Duration.ofSeconds(10);
 
   private final int maxConcurrentHandshakes;
   private final int maxFailures;
   private final Duration window;
+  private final int purgeThreshold;
   private final Clock clock;
   private final Map<InetAddress, State> states = new ConcurrentHashMap<>();
+  private final AtomicLong lastPurgeMillis = new AtomicLong(Long.MIN_VALUE);
 
   public HandshakeThrottle() {
-    this(DEFAULT_MAX_CONCURRENT_HANDSHAKES, DEFAULT_MAX_FAILURES, DEFAULT_WINDOW, Clock.systemUTC());
+    this(
+        DEFAULT_MAX_CONCURRENT_HANDSHAKES,
+        DEFAULT_MAX_FAILURES,
+        DEFAULT_WINDOW,
+        DEFAULT_PURGE_THRESHOLD,
+        Clock.systemUTC());
   }
 
-  HandshakeThrottle(int maxConcurrentHandshakes, int maxFailures, Duration window, Clock clock) {
+  HandshakeThrottle(
+      int maxConcurrentHandshakes,
+      int maxFailures,
+      Duration window,
+      int purgeThreshold,
+      Clock clock) {
     this.maxConcurrentHandshakes = maxConcurrentHandshakes;
     this.maxFailures = maxFailures;
     this.window = window;
+    this.purgeThreshold = purgeThreshold;
     this.clock = clock;
   }
 
   /**
-   * Reserves a handshake slot for {@code address}. Every {@code true} result must be paired with
-   * exactly one {@link #release(InetAddress)}.
-   *
-   * @return {@code false} if the address is blocked or already has too many handshakes in flight
+   * Reserves a handshake slot. Every admitted result must be paired with exactly one {@link
+   * #release(InetAddress)}.
    */
-  public boolean tryAcquire(InetAddress address) {
+  public Admission tryAcquire(InetAddress address) {
     purgeIfLarge();
     Instant now = clock.instant();
-    boolean[] acquired = {false};
+    Admission[] admission = {null};
     states.compute(
-        address,
+        clientKey(address),
         (key, state) -> {
           State current = (state == null) ? new State() : state;
           current.expireFailures(now, window);
-          if (current.failures < maxFailures && current.inFlight < maxConcurrentHandshakes) {
+          if (current.failures >= maxFailures) {
+            admission[0] = Admission.BLOCKED;
+          } else if (current.inFlight >= maxConcurrentHandshakes) {
+            boolean reported =
+                current.capacityReportedAt != null
+                    && now.isBefore(current.capacityReportedAt.plus(window));
+            if (!reported) {
+              current.capacityReportedAt = now;
+            }
+            admission[0] = reported ? Admission.AT_CAPACITY : Admission.CAPACITY_REACHED;
+          } else {
             current.inFlight++;
-            acquired[0] = true;
+            admission[0] = Admission.ADMITTED;
           }
-          return current;
+          return current.isIdle() ? null : current;
         });
-    return acquired[0];
+    return admission[0];
   }
 
   public void release(InetAddress address) {
     states.computeIfPresent(
-        address,
+        clientKey(address),
         (key, state) -> {
           state.inFlight--;
           return state.isIdle() ? null : state;
@@ -86,18 +135,43 @@ public final class HandshakeThrottle {
   }
 
   /**
-   * Counts a failed credential check against {@code address}.
+   * Reserves one credential check. Must be followed by exactly one {@link #recordFailure} or
+   * {@link #recordSuccess} when it returns {@code true}.
    *
-   * @return {@code true} if this failure is the one that blocks the address
+   * @return {@code false} if the client's guess budget for the window is exhausted, counting
+   *     checks still in progress; the credentials must then be rejected without comparing them
+   */
+  public boolean tryBeginAttempt(InetAddress address) {
+    Instant now = clock.instant();
+    boolean[] reserved = {false};
+    states.compute(
+        clientKey(address),
+        (key, state) -> {
+          State current = (state == null) ? new State() : state;
+          current.expireFailures(now, window);
+          if (current.failures + current.pendingAttempts < maxFailures) {
+            current.pendingAttempts++;
+            reserved[0] = true;
+          }
+          return current.isIdle() ? null : current;
+        });
+    return reserved[0];
+  }
+
+  /**
+   * Converts a reserved attempt into a counted failure.
+   *
+   * @return {@code true} if this failure is the one that blocks the client
    */
   public boolean recordFailure(InetAddress address) {
     Instant now = clock.instant();
     boolean[] blockedNow = {false};
     states.compute(
-        address,
+        clientKey(address),
         (key, state) -> {
           State current = (state == null) ? new State() : state;
           current.expireFailures(now, window);
+          current.endAttempt();
           if (current.failures == 0) {
             current.windowStart = now;
           }
@@ -108,20 +182,56 @@ public final class HandshakeThrottle {
     return blockedNow[0];
   }
 
+  /** Releases a reserved attempt whose credentials were valid. */
+  public void recordSuccess(InetAddress address) {
+    states.computeIfPresent(
+        clientKey(address),
+        (key, state) -> {
+          state.endAttempt();
+          return state.isIdle() ? null : state;
+        });
+  }
+
   Duration window() {
     return window;
   }
 
+  int trackedClients() {
+    return states.size();
+  }
+
+  /** IPv4 addresses are their own key; IPv6 addresses are reduced to their /64 prefix. */
+  static InetAddress clientKey(InetAddress address) {
+    if (!(address instanceof Inet6Address)) {
+      return address;
+    }
+    byte[] prefix = Arrays.copyOf(address.getAddress(), 16);
+    Arrays.fill(prefix, 8, 16, (byte) 0);
+    try {
+      return InetAddress.getByAddress(prefix);
+    } catch (UnknownHostException e) {
+      throw new IllegalStateException("16-byte address rejected", e); // can't happen
+    }
+  }
+
   private void purgeIfLarge() {
-    if (states.size() <= PURGE_THRESHOLD) {
+    if (states.size() <= purgeThreshold) {
       return;
     }
-    Instant now = clock.instant();
-    for (InetAddress address : states.keySet()) {
+    long now = clock.millis();
+    long last = lastPurgeMillis.get();
+    if (last != Long.MIN_VALUE && now - last < PURGE_INTERVAL.toMillis()) {
+      return;
+    }
+    if (!lastPurgeMillis.compareAndSet(last, now)) {
+      return; // another thread is purging
+    }
+    Instant instant = clock.instant();
+    for (InetAddress key : states.keySet()) {
       states.computeIfPresent(
-          address,
-          (key, state) -> {
-            state.expireFailures(now, window);
+          key,
+          (k, state) -> {
+            state.expireFailures(instant, window);
             return state.isIdle() ? null : state;
           });
     }
@@ -130,8 +240,10 @@ public final class HandshakeThrottle {
   /** Mutated only inside {@link ConcurrentHashMap#compute}, which serialises per key. */
   private static final class State {
     private int inFlight;
+    private int pendingAttempts;
     private int failures;
     private Instant windowStart;
+    private Instant capacityReportedAt;
 
     void expireFailures(Instant now, Duration window) {
       if (failures > 0 && !now.isBefore(windowStart.plus(window))) {
@@ -140,8 +252,14 @@ public final class HandshakeThrottle {
       }
     }
 
+    void endAttempt() {
+      if (pendingAttempts > 0) {
+        pendingAttempts--;
+      }
+    }
+
     boolean isIdle() {
-      return inFlight == 0 && failures == 0;
+      return inFlight == 0 && pendingAttempts == 0 && failures == 0;
     }
   }
 }
