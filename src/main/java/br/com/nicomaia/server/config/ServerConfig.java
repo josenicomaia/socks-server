@@ -28,7 +28,7 @@ public record ServerConfig(
   /**
    * Package-private seam for testing: lets tests supply credentials (or a supplier that throws)
    * without touching real environment variables. Production code always goes through {@link
-   * #fromArgs(String[], Metrics)}, which reads {@code nexus_deps_USR}/{@code nexus_deps_psw}.
+   * #fromArgs(String[], Metrics)}, which reads {@code SOCKS_USERNAME}/{@code SOCKS_PASSWORD}.
    *
    * <p>Deliberately does not catch exceptions from {@code credentialsSupplier}: a missing/blank
    * credential must propagate as {@link IllegalStateException} so the caller (see {@link

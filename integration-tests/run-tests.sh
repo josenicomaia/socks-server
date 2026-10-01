@@ -1,9 +1,9 @@
 #!/bin/sh
 set -e
 
-SOCKS_USER="${SOCKS_USER:-testuser}"
-SOCKS_PASS="${SOCKS_PASS:-testpassword}"
-PROXY="socks5://${SOCKS_USER}:${SOCKS_PASS}@socks-server:5353"
+SOCKS_USERNAME="${SOCKS_USERNAME:-testuser}"
+SOCKS_PASSWORD="${SOCKS_PASSWORD:-testpassword}"
+PROXY="socks5://${SOCKS_USERNAME}:${SOCKS_PASSWORD}@socks-server:5353"
 PASSED=0
 FAILED=0
 TOTAL=0
@@ -100,7 +100,7 @@ fi
 # --- Test 6: HTTPS via SOCKS5h (DNS resolved by proxy) ---
 echo ""
 echo "── Test 6: HTTPS via socks5h (proxy-side DNS) ──"
-HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5h://${SOCKS_USER}:${SOCKS_PASS}@socks-server:5353" --max-time 10 https://httpbin.org/get 2>/dev/null || echo "000")
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5h://${SOCKS_USERNAME}:${SOCKS_PASSWORD}@socks-server:5353" --max-time 10 https://httpbin.org/get 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
     pass "HTTPS via socks5h works"
 else
@@ -220,7 +220,7 @@ fi
 # --- Test 14: Wrong credentials are rejected ---
 echo ""
 echo "── Test 14: Wrong credentials rejected ──"
-HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5://${SOCKS_USER}:wrong-password@socks-server:5353" --max-time 5 http://httpbin.org/get 2>/dev/null || true)
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5://${SOCKS_USERNAME}:wrong-password@socks-server:5353" --max-time 5 http://httpbin.org/get 2>/dev/null || true)
 if [ "$HTTP_CODE" != "200" ]; then
     pass "Wrong credentials correctly rejected (got $HTTP_CODE)"
 else

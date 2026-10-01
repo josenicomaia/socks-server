@@ -23,12 +23,12 @@ the process refuses to start if either is missing:
 
 | Variable | Description |
 |---|---|
-| `nexus_deps_USR` | Required username |
-| `nexus_deps_psw` | Required password |
+| `SOCKS_USERNAME` | Required username |
+| `SOCKS_PASSWORD` | Required password |
 
 ```bash
-export nexus_deps_USR=myuser
-export nexus_deps_psw=mypassword
+export SOCKS_USERNAME=myuser
+export SOCKS_PASSWORD=mypassword
 java -jar target/server-*.jar
 ```
 

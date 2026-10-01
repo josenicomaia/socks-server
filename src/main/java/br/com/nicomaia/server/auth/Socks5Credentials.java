@@ -6,13 +6,13 @@ import java.util.Objects;
 
 /**
  * Credentials required to authenticate SOCKS5 clients via the RFC 1929 username/password
- * sub-negotiation. Loaded once at startup from the {@code nexus_deps_USR} / {@code
- * nexus_deps_psw} environment variables; the server refuses to start if either is missing.
+ * sub-negotiation. Loaded once at startup from the {@code SOCKS_USERNAME} / {@code
+ * SOCKS_PASSWORD} environment variables; the server refuses to start if either is missing.
  */
 public final class Socks5Credentials {
 
-  public static final String USERNAME_ENV = "nexus_deps_USR";
-  public static final String PASSWORD_ENV = "nexus_deps_psw";
+  public static final String USERNAME_ENV = "SOCKS_USERNAME";
+  public static final String PASSWORD_ENV = "SOCKS_PASSWORD";
 
   private final byte[] username;
   private final byte[] password;

@@ -11,7 +11,7 @@ class ServerConfigTest {
   @Test
   void shouldPropagateExceptionWhenCredentialsAreMissing() {
     // This is the contract the whole username/password auth feature relies on: the server must
-    // refuse to start if nexus_deps_USR/nexus_deps_psw aren't configured. Socks5Credentials.of
+    // refuse to start if SOCKS_USERNAME/SOCKS_PASSWORD aren't configured. Socks5Credentials.of
     // throws IllegalStateException for a missing value; fromArgs must let it propagate, not
     // swallow it and fall back to some default.
     assertThrows(
