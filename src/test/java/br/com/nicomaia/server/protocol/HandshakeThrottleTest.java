@@ -47,6 +47,35 @@ class HandshakeThrottleTest {
   }
 
   @Test
+  void shouldKeepCapacityReportAcrossBurstsWithinWindow() {
+    throttle.tryAcquire(client);
+    throttle.tryAcquire(client);
+    assertEquals(Admission.CAPACITY_REACHED, throttle.tryAcquire(client));
+    throttle.release(client);
+    throttle.release(client); // the burst ends: no handshake in flight
+
+    throttle.tryAcquire(client);
+    throttle.tryAcquire(client);
+
+    assertEquals(Admission.AT_CAPACITY, throttle.tryAcquire(client), "already reported");
+  }
+
+  @Test
+  void shouldForgetCapacityReportOnceWindowElapses() {
+    throttle.tryAcquire(client);
+    throttle.tryAcquire(client);
+    throttle.tryAcquire(client); // reported
+    throttle.release(client);
+    throttle.release(client);
+
+    clock.advance(WINDOW);
+    assertTrue(throttle.tryAcquire(client).isAdmitted());
+    throttle.release(client);
+
+    assertEquals(0, throttle.trackedClients(), "expired report must not keep the entry alive");
+  }
+
+  @Test
   void shouldLetDefaultThrottleAdmitABurstOfLegitimateConnections() {
     // Integration test 8 opens 20 connections at once from one address; a browser behind the
     // proxy does the same. They must not be refused just for arriving together.

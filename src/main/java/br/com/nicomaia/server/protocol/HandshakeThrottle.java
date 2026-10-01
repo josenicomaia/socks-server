@@ -105,13 +105,11 @@ public final class HandshakeThrottle {
         clientKey(address),
         (key, state) -> {
           State current = (state == null) ? new State() : state;
-          current.expireFailures(now, window);
+          current.expire(now, window);
           if (current.failures >= maxFailures) {
             admission[0] = Admission.BLOCKED;
           } else if (current.inFlight >= maxConcurrentHandshakes) {
-            boolean reported =
-                current.capacityReportedAt != null
-                    && now.isBefore(current.capacityReportedAt.plus(window));
+            boolean reported = current.capacityReportedAt != null; // expire() cleared stale ones
             if (!reported) {
               current.capacityReportedAt = now;
             }
@@ -148,7 +146,7 @@ public final class HandshakeThrottle {
         clientKey(address),
         (key, state) -> {
           State current = (state == null) ? new State() : state;
-          current.expireFailures(now, window);
+          current.expire(now, window);
           if (current.failures + current.pendingAttempts < maxFailures) {
             current.pendingAttempts++;
             reserved[0] = true;
@@ -170,7 +168,7 @@ public final class HandshakeThrottle {
         clientKey(address),
         (key, state) -> {
           State current = (state == null) ? new State() : state;
-          current.expireFailures(now, window);
+          current.expire(now, window);
           current.endAttempt();
           if (current.failures == 0) {
             current.windowStart = now;
@@ -231,7 +229,7 @@ public final class HandshakeThrottle {
       states.computeIfPresent(
           key,
           (k, state) -> {
-            state.expireFailures(instant, window);
+            state.expire(instant, window);
             return state.isIdle() ? null : state;
           });
     }
@@ -245,10 +243,14 @@ public final class HandshakeThrottle {
     private Instant windowStart;
     private Instant capacityReportedAt;
 
-    void expireFailures(Instant now, Duration window) {
+    /** Forgets failures and the capacity report once their window has elapsed. */
+    void expire(Instant now, Duration window) {
       if (failures > 0 && !now.isBefore(windowStart.plus(window))) {
         failures = 0;
         windowStart = null;
+      }
+      if (capacityReportedAt != null && !now.isBefore(capacityReportedAt.plus(window))) {
+        capacityReportedAt = null;
       }
     }
 
@@ -258,8 +260,13 @@ public final class HandshakeThrottle {
       }
     }
 
+    /**
+     * Idle entries are dropped. A pending capacity report keeps the entry alive so the "once per
+     * window" warning holds across bursts; once the window elapses it is cleared on the client's
+     * next call, or by the purge when the map grows past the threshold.
+     */
     boolean isIdle() {
-      return inFlight == 0 && pendingAttempts == 0 && failures == 0;
+      return inFlight == 0 && pendingAttempts == 0 && failures == 0 && capacityReportedAt == null;
     }
   }
 }
