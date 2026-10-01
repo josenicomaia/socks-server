@@ -73,25 +73,6 @@ class SocketReaderTest {
   }
 
   @Test
-  void shouldReadUsernamePasswordRequest() throws IOException {
-    byte[] username = "alice".getBytes(StandardCharsets.UTF_8);
-    byte[] password = "s3cret".getBytes(StandardCharsets.UTF_8);
-    byte[] payload = new byte[3 + username.length + password.length];
-    payload[0] = 0x01;
-    payload[1] = (byte) username.length;
-    System.arraycopy(username, 0, payload, 2, username.length);
-    payload[2 + username.length] = (byte) password.length;
-    System.arraycopy(password, 0, payload, 3 + username.length, password.length);
-    InputStream in = new ByteArrayInputStream(payload);
-
-    UsernamePasswordRequest request = SocketReader.readUsernamePassword(in);
-
-    assertEquals((byte) 0x01, request.version());
-    assertArrayEquals(username, request.username());
-    assertArrayEquals(password, request.password());
-  }
-
-  @Test
   void shouldReadFullyAcrossMultiplePartialReads() throws IOException {
     InputStream slowStream =
         new InputStream() {

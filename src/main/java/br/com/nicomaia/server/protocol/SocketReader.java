@@ -29,17 +29,6 @@ public class SocketReader {
     return ((buffer[0] & 0xFF) << 8) | (buffer[1] & 0xFF);
   }
 
-  /** Parses the RFC 1929 username/password sub-negotiation request. */
-  public static UsernamePasswordRequest readUsernamePassword(InputStream in) throws IOException {
-    byte version = readFully(in, 1)[0];
-    int usernameLength = readFully(in, 1)[0] & 0xFF;
-    byte[] username = readFully(in, usernameLength);
-    int passwordLength = readFully(in, 1)[0] & 0xFF;
-    byte[] password = readFully(in, passwordLength);
-
-    return new UsernamePasswordRequest(version, username, password);
-  }
-
   private static int readDomainLength(InputStream in) throws IOException {
     return readFully(in, 1)[0] & 0xFF;
   }
