@@ -8,6 +8,7 @@ import br.com.nicomaia.server.metrics.ConnectionRecord;
 import br.com.nicomaia.server.metrics.Metrics;
 import br.com.nicomaia.server.transfer.ClientServerTransfer;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.time.LocalTime;
 import java.util.logging.Level;
@@ -16,6 +17,9 @@ import java.util.logging.Logger;
 public class ConnectHandler implements CommandHandler {
 
   private static final Logger logger = Logger.getLogger(ConnectHandler.class.getName());
+
+  /** Without it, a destination that drops SYNs keeps the client waiting for the OS default. */
+  static final int CONNECT_TIMEOUT_MILLIS = 10_000;
 
   private final Metrics metrics;
 
@@ -26,10 +30,12 @@ public class ConnectHandler implements CommandHandler {
   public void handle(Socket client, Command command) {
     String destination = command.address().getHostName() + ":" + command.port();
 
-    Socket proxiedConnection;
+    Socket proxiedConnection = new Socket();
     try {
-      proxiedConnection = new Socket(command.address(), command.port());
+      proxiedConnection.connect(
+          new InetSocketAddress(command.address(), command.port()), CONNECT_TIMEOUT_MILLIS);
     } catch (IOException e) {
+      closeQuietly(proxiedConnection);
       logger.log(Level.WARNING, "Connect failed to " + destination, e);
       recordFailure(destination);
       trySendFailure(client, command);
