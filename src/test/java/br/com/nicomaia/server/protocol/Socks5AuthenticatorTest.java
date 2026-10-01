@@ -9,7 +9,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -20,8 +19,7 @@ import org.junit.jupiter.api.Test;
 class Socks5AuthenticatorTest {
 
   private static final Socks5Credentials CREDENTIALS = Socks5Credentials.of("alice", "s3cret");
-  private final Socks5Authenticator authenticator =
-      Socks5Authenticator.requiring(CREDENTIALS, Duration.ZERO);
+  private final Socks5Authenticator authenticator = Socks5Authenticator.requiring(CREDENTIALS);
 
   @Test
   void shouldRejectUnsupportedSocksVersionWithoutReplying() throws IOException {
@@ -48,7 +46,7 @@ class Socks5AuthenticatorTest {
 
     Outcome result = authenticator.authenticate(in, out);
 
-    assertEquals(Outcome.AUTHENTICATED, result);
+    assertEquals(Outcome.ACCEPTED, result);
     assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x00}, out.toByteArray());
   }
 
@@ -81,7 +79,7 @@ class Socks5AuthenticatorTest {
 
     Outcome result = authenticator.authenticate(in, out);
 
-    assertEquals(Outcome.AUTHENTICATED, result);
+    assertEquals(Outcome.ACCEPTED, result);
     assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x00}, out.toByteArray());
   }
 
@@ -94,25 +92,6 @@ class Socks5AuthenticatorTest {
 
     assertEquals(Outcome.INVALID_CREDENTIALS, result);
     assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x01}, out.toByteArray());
-  }
-
-  @Test
-  void shouldDelayReplyToInvalidCredentials() throws IOException {
-    var delayed = Socks5Authenticator.requiring(CREDENTIALS, Duration.ofMillis(200));
-    var out = new ByteArrayOutputStream();
-    var in = negotiationAndCredentials(new byte[] {0x02}, "alice", "wrong-password");
-
-    long start = System.nanoTime();
-    Outcome result = delayed.authenticate(in, out);
-    long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
-
-    assertEquals(Outcome.INVALID_CREDENTIALS, result);
-    assertTrue(elapsedMillis >= 200, "Failure reply came after only " + elapsedMillis + "ms");
-  }
-
-  @Test
-  void shouldUseOneSecondFailureDelayByDefault() {
-    assertEquals(Duration.ofSeconds(1), Socks5Authenticator.DEFAULT_FAILURE_DELAY);
   }
 
   @Test
@@ -165,7 +144,7 @@ class Socks5AuthenticatorTest {
     Outcome result = noAuth.authenticate(in, out);
 
     assertFalse(noAuth.isAuthenticationRequired());
-    assertEquals(Outcome.AUTHENTICATED, result);
+    assertEquals(Outcome.ACCEPTED, result);
     assertArrayEquals(new byte[] {0x05, 0x00}, out.toByteArray());
   }
 
@@ -177,7 +156,7 @@ class Socks5AuthenticatorTest {
 
     Outcome result = Socks5Authenticator.withoutAuthentication().authenticate(in, out);
 
-    assertEquals(Outcome.AUTHENTICATED, result);
+    assertEquals(Outcome.ACCEPTED, result);
     // Only the method-selection reply: no credential sub-negotiation takes place.
     assertArrayEquals(new byte[] {0x05, 0x00}, out.toByteArray());
   }

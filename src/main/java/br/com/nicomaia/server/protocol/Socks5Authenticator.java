@@ -3,9 +3,7 @@ package br.com.nicomaia.server.protocol;
 import br.com.nicomaia.server.auth.Socks5Credentials;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InterruptedIOException;
 import java.io.OutputStream;
-import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
@@ -20,54 +18,41 @@ import java.util.logging.Logger;
  * strictly controlled environments and must never face an untrusted network.
  *
  * <p>Operates purely on {@link InputStream}/{@link OutputStream} (no {@link java.net.Socket}
- * dependency) so it can be exercised with in-memory streams in tests. Logging of rejections is
- * left to the caller, which knows the client's address.
+ * dependency) so it can be exercised with in-memory streams in tests. Logging of rejections and
+ * brute-force throttling are left to the caller, which knows the client's address.
  */
 public class Socks5Authenticator {
 
   private static final Logger logger = Logger.getLogger(Socks5Authenticator.class.getName());
 
-  private static final byte SOCKS_VERSION = 0x05;
-
-  /**
-   * Delay before answering a failed credential check. Slows down online brute force: each
-   * connection gets at most one guess, and that guess costs the attacker this long.
-   */
-  static final Duration DEFAULT_FAILURE_DELAY = Duration.ofSeconds(1);
+  static final byte SOCKS_VERSION = 0x05;
 
   public enum Outcome {
-    AUTHENTICATED,
+    ACCEPTED,
     UNSUPPORTED_VERSION,
     NO_ACCEPTABLE_METHOD,
     UNSUPPORTED_SUBNEGOTIATION_VERSION,
     INVALID_CREDENTIALS;
 
-    public boolean isAuthenticated() {
-      return this == AUTHENTICATED;
+    public boolean isAccepted() {
+      return this == ACCEPTED;
     }
   }
 
   /** {@code null} when authentication is disabled. */
   private final Socks5Credentials credentials;
 
-  private final Duration failureDelay;
-
-  private Socks5Authenticator(Socks5Credentials credentials, Duration failureDelay) {
+  private Socks5Authenticator(Socks5Credentials credentials) {
     this.credentials = credentials;
-    this.failureDelay = failureDelay;
   }
 
   public static Socks5Authenticator requiring(Socks5Credentials credentials) {
-    return requiring(credentials, DEFAULT_FAILURE_DELAY);
-  }
-
-  static Socks5Authenticator requiring(Socks5Credentials credentials, Duration failureDelay) {
-    return new Socks5Authenticator(Objects.requireNonNull(credentials), failureDelay);
+    return new Socks5Authenticator(Objects.requireNonNull(credentials));
   }
 
   /** Accepts {@code NO_AUTH} clients only. Use exclusively in strictly controlled environments. */
   public static Socks5Authenticator withoutAuthentication() {
-    return new Socks5Authenticator(null, Duration.ZERO);
+    return new Socks5Authenticator(null);
   }
 
   public boolean isAuthenticationRequired() {
@@ -94,7 +79,7 @@ public class Socks5Authenticator {
 
     reply(out, new AuthResponse(SOCKS_VERSION, requiredMethod));
 
-    return isAuthenticationRequired() ? verifyCredentials(in, out) : Outcome.AUTHENTICATED;
+    return isAuthenticationRequired() ? verifyCredentials(in, out) : Outcome.ACCEPTED;
   }
 
   private Outcome verifyCredentials(InputStream in, OutputStream out) throws IOException {
@@ -106,14 +91,10 @@ public class Socks5Authenticator {
     } else if (!credentials.matches(request.username(), request.password())) {
       outcome = Outcome.INVALID_CREDENTIALS;
     } else {
-      outcome = Outcome.AUTHENTICATED;
+      outcome = Outcome.ACCEPTED;
     }
 
-    if (!outcome.isAuthenticated()) {
-      delayFailure();
-    }
-
-    out.write(UsernamePasswordResponse.forOutcome(outcome.isAuthenticated()).toBytes());
+    out.write(UsernamePasswordResponse.forOutcome(outcome.isAccepted()).toBytes());
     out.flush();
     return outcome;
   }
@@ -122,17 +103,5 @@ public class Socks5Authenticator {
     logger.info(response.toString());
     out.write(response.toBytes());
     out.flush();
-  }
-
-  private void delayFailure() throws InterruptedIOException {
-    if (failureDelay.isZero()) {
-      return;
-    }
-    try {
-      Thread.sleep(failureDelay);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new InterruptedIOException("Interrupted while delaying authentication failure");
-    }
   }
 }
