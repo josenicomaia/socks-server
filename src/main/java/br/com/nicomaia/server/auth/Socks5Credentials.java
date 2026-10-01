@@ -7,34 +7,55 @@ import java.util.Objects;
 /**
  * Credentials required to authenticate SOCKS5 clients via the RFC 1929 username/password
  * sub-negotiation. Loaded once at startup from the {@code SOCKS_USERNAME} / {@code
- * SOCKS_PASSWORD} environment variables; the server refuses to start if either is missing.
+ * SOCKS_PASSWORD} environment variables; the server refuses to start if either is missing or
+ * invalid.
  */
 public final class Socks5Credentials {
 
   public static final String USERNAME_ENV = "SOCKS_USERNAME";
   public static final String PASSWORD_ENV = "SOCKS_PASSWORD";
 
+  /** RFC 1929 encodes ULEN/PLEN in a single byte, so longer values can never authenticate. */
+  public static final int MAX_LENGTH_BYTES = 255;
+
   private final byte[] username;
   private final byte[] password;
 
   private Socks5Credentials(byte[] username, byte[] password) {
-    this.username = username.clone();
-    this.password = password.clone();
+    this.username = username;
+    this.password = password;
   }
 
   public static Socks5Credentials fromEnvironment() {
-    return of(System.getenv(USERNAME_ENV), System.getenv(PASSWORD_ENV));
+    return of(requireEnv(USERNAME_ENV), requireEnv(PASSWORD_ENV));
   }
 
   public static Socks5Credentials of(String username, String password) {
-    if (username == null || username.isBlank()) {
-      throw new IllegalStateException("Missing required environment variable: " + USERNAME_ENV);
+    return new Socks5Credentials(encode("Username", username), encode("Password", password));
+  }
+
+  private static String requireEnv(String name) {
+    String value = System.getenv(name);
+    if (value == null || value.isBlank()) {
+      throw new IllegalStateException("Missing required environment variable: " + name);
     }
-    if (password == null || password.isBlank()) {
-      throw new IllegalStateException("Missing required environment variable: " + PASSWORD_ENV);
+    return value;
+  }
+
+  private static byte[] encode(String field, String value) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalStateException(field + " must not be blank");
     }
-    return new Socks5Credentials(
-        username.getBytes(StandardCharsets.UTF_8), password.getBytes(StandardCharsets.UTF_8));
+    byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+    if (bytes.length > MAX_LENGTH_BYTES) {
+      throw new IllegalStateException(
+          field
+              + " must be at most "
+              + MAX_LENGTH_BYTES
+              + " bytes in UTF-8 (RFC 1929), got "
+              + bytes.length);
+    }
+    return bytes;
   }
 
   /**

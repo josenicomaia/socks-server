@@ -40,7 +40,7 @@ class Socks5CredentialsTest {
     var exception =
         assertThrows(IllegalStateException.class, () -> Socks5Credentials.of(null, "s3cret"));
 
-    assertTrue(exception.getMessage().contains(Socks5Credentials.USERNAME_ENV));
+    assertTrue(exception.getMessage().contains("Username"));
   }
 
   @Test
@@ -53,7 +53,7 @@ class Socks5CredentialsTest {
     var exception =
         assertThrows(IllegalStateException.class, () -> Socks5Credentials.of("alice", null));
 
-    assertTrue(exception.getMessage().contains(Socks5Credentials.PASSWORD_ENV));
+    assertTrue(exception.getMessage().contains("Password"));
   }
 
   @Test
@@ -62,16 +62,30 @@ class Socks5CredentialsTest {
   }
 
   @Test
-  void shouldNotBeAffectedByMutatingSourceBytes() {
-    var credentials = Socks5Credentials.of("alice", "s3cret");
-    byte[] candidateUsername = bytes("alice");
+  void shouldAcceptCredentialsAtTheRfc1929LengthLimit() {
+    String longest = "u".repeat(Socks5Credentials.MAX_LENGTH_BYTES);
 
-    boolean firstCheck = credentials.matches(candidateUsername, bytes("s3cret"));
-    candidateUsername[0] = 'X';
-    boolean secondCheck = credentials.matches(candidateUsername, bytes("s3cret"));
+    var credentials = Socks5Credentials.of(longest, longest);
 
-    assertTrue(firstCheck);
-    assertFalse(secondCheck);
+    assertTrue(credentials.matches(bytes(longest), bytes(longest)));
+  }
+
+  @Test
+  void shouldThrowWhenUsernameExceedsRfc1929Length() {
+    String tooLong = "u".repeat(Socks5Credentials.MAX_LENGTH_BYTES + 1);
+
+    var exception =
+        assertThrows(IllegalStateException.class, () -> Socks5Credentials.of(tooLong, "s3cret"));
+
+    assertTrue(exception.getMessage().contains("255"));
+  }
+
+  @Test
+  void shouldThrowWhenPasswordExceedsRfc1929LengthInUtf8Bytes() {
+    // 128 characters, but 256 bytes in UTF-8: the limit is on encoded bytes, not characters.
+    String tooLong = "é".repeat(128);
+
+    assertThrows(IllegalStateException.class, () -> Socks5Credentials.of("alice", tooLong));
   }
 
   private static byte[] bytes(String value) {
