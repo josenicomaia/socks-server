@@ -26,6 +26,17 @@ class HandshakeThrottleTest {
   }
 
   @Test
+  void shouldLetDefaultThrottleAdmitABurstOfLegitimateConnections() {
+    // Integration test 8 opens 20 connections at once from one address; a browser behind the
+    // proxy does the same. They must not be refused just for arriving together.
+    var defaults = new HandshakeThrottle();
+
+    for (int i = 0; i < 20; i++) {
+      assertTrue(defaults.tryAcquire(client), "connection " + (i + 1) + " refused");
+    }
+  }
+
+  @Test
   void shouldNotLetOneAddressConsumeAnotherAddressSlots() {
     throttle.tryAcquire(client);
     throttle.tryAcquire(client);

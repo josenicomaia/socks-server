@@ -23,7 +23,12 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class HandshakeThrottle {
 
-  static final int DEFAULT_MAX_CONCURRENT_HANDSHAKES = 8;
+  /**
+   * Generous on purpose: a legitimate client (a browser behind the proxy, or several hosts
+   * behind one NAT address) opens many connections at once, and each spends only milliseconds in
+   * the handshake. It still bounds how many password guesses one address can have in flight.
+   */
+  static final int DEFAULT_MAX_CONCURRENT_HANDSHAKES = 64;
   static final int DEFAULT_MAX_FAILURES = 5;
   static final Duration DEFAULT_WINDOW = Duration.ofMinutes(1);
 

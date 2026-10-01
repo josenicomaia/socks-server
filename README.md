@@ -43,7 +43,7 @@ Clients must send their whole handshake (greeting, credentials and command reque
 **10 seconds** in total — a deadline across all reads, so dripping bytes doesn't extend it;
 connections that miss it are closed. Connecting to the destination is bounded separately (10 s).
 
-To slow down online brute force, each client address may have at most **8 handshakes in
+To slow down online brute force, each client address may have at most **64 handshakes in
 progress** at once, and after **5 failed logins within a minute** it is refused until that minute
 has passed. Clients behind the same NAT address share these limits. Rejected handshakes and
 blocked addresses are logged as warnings with the client address (never the submitted username or
