@@ -59,6 +59,14 @@ class SupportedAuthTypeTest {
   }
 
   @Test
+  void shouldNotTreatNoAcceptableMethodsAsAClientOffer() {
+    byte[] buffer = {(byte) 0xFF};
+    Set<SupportedAuthType> result = SupportedAuthType.valueOf(buffer);
+
+    assertTrue(result.isEmpty());
+  }
+
+  @Test
   void shouldHandleDuplicateAuthTypesInBuffer() {
     byte[] buffer = {0x00, 0x00, 0x02};
     Set<SupportedAuthType> result = SupportedAuthType.valueOf(buffer);
