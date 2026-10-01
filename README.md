@@ -36,6 +36,14 @@ Clients must be configured to use SOCKS5 with username/password auth (not "no au
 Note that RFC 1929 sends credentials in cleartext over the TCP connection — combine this with
 network-level controls (firewall/VPN) if the proxy is reachable over an untrusted network.
 
+Clients must complete the handshake (greeting, credentials and command request) within
+**10 seconds**; connections that stall are closed.
+
+> **Upgrading from 1.0.x:** authentication used to be disabled (`NO_AUTH` was always accepted).
+> Existing deployments must now set `SOCKS_USERNAME` and `SOCKS_PASSWORD` — including
+> `docker run` — or the server will refuse to start, and every client must be reconfigured to
+> send those credentials.
+
 ## Quick Start
 
 ### Build
@@ -47,9 +55,12 @@ mvn clean package -DskipTests
 ### Run
 
 ```bash
+export SOCKS_USERNAME=myuser
+export SOCKS_PASSWORD=mypassword
 java -jar target/server-*.jar
 ```
 
+The credentials are required for every invocation below (see [Authentication](#authentication)).
 By default, the server starts on port **5353** with the TUI dashboard enabled.
 
 ### Custom Port
@@ -101,7 +112,10 @@ When the TUI is **disabled** (`--no-tui`), logs go to **stdout** as usual.
 docker build -t socks-server .
 
 # Run (TUI is disabled automatically via --no-tui in Dockerfile)
-docker run -p 5353:5353 socks-server
+docker run -p 5353:5353 \
+  -e SOCKS_USERNAME=myuser \
+  -e SOCKS_PASSWORD=mypassword \
+  socks-server
 ```
 
 ## Testing
