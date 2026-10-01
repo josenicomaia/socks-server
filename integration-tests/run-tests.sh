@@ -243,6 +243,16 @@ else
     fail "Missing credentials" "expected curl exit $CURLE_PROXY (SOCKS handshake failure), got $EXIT_CODE"
 fi
 
+# --- Test 16: --no-auth server accepts clients without credentials ---
+echo ""
+echo "── Test 16: --no-auth server proxies without credentials ──"
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5://socks-server-noauth:5353" --max-time 10 http://httpbin.org/get 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "200" ]; then
+    pass "--no-auth server proxied an unauthenticated client"
+else
+    fail "--no-auth" "expected HTTP 200 without credentials, got $HTTP_CODE"
+fi
+
 # Verify proxy still works after negative tests
 echo ""
 echo "── Sanity check: proxy still alive after negative tests ──"

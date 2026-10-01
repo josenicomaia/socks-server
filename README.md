@@ -39,13 +39,15 @@ Clients must be configured to use SOCKS5 with username/password auth (not "no au
 Note that RFC 1929 sends credentials in cleartext over the TCP connection — combine this with
 network-level controls (firewall/VPN) if the proxy is reachable over an untrusted network.
 
-Clients must complete the handshake (greeting, credentials and command request) within
-**10 seconds**; connections that stall are closed.
+Clients must send their whole handshake (greeting, credentials and command request) within
+**10 seconds** in total — a deadline across all reads, so dripping bytes doesn't extend it;
+connections that miss it are closed. Connecting to the destination is bounded separately (10 s).
 
-A failed credential check is answered only after a **1 second** delay, and each connection gets a
-single attempt, which slows down online brute force. Rejected handshakes are logged as warnings
-with the client address (never the submitted username or password), so they can feed tools such
-as fail2ban.
+To slow down online brute force, each client address may have at most **8 handshakes in
+progress** at once, and after **5 failed logins within a minute** it is refused until that minute
+has passed. Clients behind the same NAT address share these limits. Rejected handshakes and
+blocked addresses are logged as warnings with the client address (never the submitted username or
+password), so they can also feed tools such as fail2ban.
 
 > **Upgrading from 1.0.x:** authentication used to be disabled (`NO_AUTH` was always accepted).
 > Existing deployments must now set `SOCKS_USERNAME` and `SOCKS_PASSWORD` — including
@@ -65,8 +67,10 @@ java -jar target/server-*.jar --no-auth
 docker run -p 5353:5353 socks-server --no-auth
 ```
 
-In this mode only `NO_AUTH` clients are accepted, `SOCKS_USERNAME`/`SOCKS_PASSWORD` are ignored,
-and the server prints a security warning at startup (and keeps one on the TUI dashboard).
+In this mode only `NO_AUTH` clients are accepted and the server logs a security warning at
+startup (and keeps one on the TUI dashboard). Combining `--no-auth` with `SOCKS_USERNAME` or
+`SOCKS_PASSWORD` is a contradictory configuration, so the server refuses to start instead of
+silently ignoring the credentials.
 
 ## Quick Start
 
