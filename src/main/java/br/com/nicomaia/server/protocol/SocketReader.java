@@ -40,27 +40,15 @@ public class SocketReader {
     return new UsernamePasswordRequest(version, username, password);
   }
 
-  /**
-   * Reads exactly {@code length} bytes, looping until the buffer is full since a single {@link
-   * InputStream#read(byte[])} call may return fewer bytes than requested on a TCP socket.
-   */
-  public static byte[] readFully(InputStream in, int length) throws IOException {
-    byte[] buffer = new byte[length];
-    int totalRead = 0;
-
-    while (totalRead < length) {
-      int read = in.read(buffer, totalRead, length - totalRead);
-      if (read == -1) {
-        throw new EOFException(
-            "Unexpected end of stream: expected " + length + " bytes, got " + totalRead);
-      }
-      totalRead += read;
-    }
-
-    return buffer;
-  }
-
   private static int readDomainLength(InputStream in) throws IOException {
     return readFully(in, 1)[0] & 0xFF;
+  }
+
+  static byte[] readFully(InputStream in, int length) throws IOException {
+    byte[] buffer = in.readNBytes(length);
+    if (buffer.length != length) {
+      throw new EOFException("Unexpected EOF: expected " + length + " bytes, got " + buffer.length);
+    }
+    return buffer;
   }
 }

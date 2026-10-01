@@ -20,6 +20,35 @@ class Socks5AuthenticatorTest {
   private final Socks5Authenticator authenticator = new Socks5Authenticator(CREDENTIALS);
 
   @Test
+  void shouldRejectUnsupportedSocksVersionWithoutReplying() throws IOException {
+    // SOCKS4 hello: version 0x04, 1 method, USERNAME
+    var out = new ByteArrayOutputStream();
+    var in = new ByteArrayInputStream(new byte[] {0x04, 0x01, 0x02});
+
+    boolean result = authenticator.authenticate(in, out);
+
+    assertFalse(result);
+    assertEquals(0, out.size(), "Server must not reply to a non-SOCKS5 hello");
+  }
+
+  @Test
+  void shouldReadMethodCountAboveSignedByteRange() throws IOException {
+    // NMETHODS = 0x80 (128) has the high bit set; read as a signed byte it would be negative.
+    byte[] methods = new byte[0x80];
+    for (int i = 0; i < methods.length; i++) {
+      methods[i] = (byte) (0x80 + i); // private/unknown methods
+    }
+    methods[methods.length - 1] = 0x02; // USERNAME offered last
+    var out = new ByteArrayOutputStream();
+    var in = negotiationAndCredentials(methods, "alice", "s3cret");
+
+    boolean result = authenticator.authenticate(in, out);
+
+    assertTrue(result);
+    assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x00}, out.toByteArray());
+  }
+
+  @Test
   void shouldRejectWhenClientOffersNoMethods() throws IOException {
     var out = new ByteArrayOutputStream();
     var in = new ByteArrayInputStream(new byte[] {0x05, 0x00}); // VER, NMETHODS=0

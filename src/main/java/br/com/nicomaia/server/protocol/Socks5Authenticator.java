@@ -20,6 +20,8 @@ public class Socks5Authenticator {
 
   private static final Logger logger = Logger.getLogger(Socks5Authenticator.class.getName());
 
+  private static final byte SOCKS_VERSION = 0x05;
+
   private final Socks5Credentials credentials;
 
   public Socks5Authenticator(Socks5Credentials credentials) {
@@ -31,6 +33,11 @@ public class Socks5Authenticator {
     byte[] header = SocketReader.readFully(in, 2);
     byte socksVersion = header[0];
     int methodCount = header[1] & 0xFF;
+
+    if (socksVersion != SOCKS_VERSION) {
+      logger.info("Rejecting connection with unsupported SOCKS version: " + socksVersion);
+      return false;
+    }
 
     byte[] methodBytes = SocketReader.readFully(in, methodCount);
     Set<SupportedAuthType> offeredMethods = SupportedAuthType.valueOf(methodBytes);
