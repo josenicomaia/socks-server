@@ -3,6 +3,7 @@ package br.com.nicomaia.server.auth;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class Socks5CredentialsTest {
@@ -86,6 +87,34 @@ class Socks5CredentialsTest {
     String tooLong = "é".repeat(128);
 
     assertThrows(IllegalStateException.class, () -> Socks5Credentials.of("alice", tooLong));
+  }
+
+  @Test
+  void shouldReadCredentialsFromEnvironment() {
+    var credentials =
+        Socks5Credentials.fromEnvironment(
+            Map.of(Socks5Credentials.USERNAME_ENV, "alice", Socks5Credentials.PASSWORD_ENV, "s3cret")
+                ::get);
+
+    assertTrue(credentials.matches(bytes("alice"), bytes("s3cret")));
+  }
+
+  @Test
+  void shouldNameTheMissingEnvironmentVariable() {
+    var exception =
+        assertThrows(
+            IllegalStateException.class,
+            () -> Socks5Credentials.fromEnvironment(Map.of(Socks5Credentials.USERNAME_ENV, "alice")::get));
+
+    assertTrue(exception.getMessage().contains(Socks5Credentials.PASSWORD_ENV));
+  }
+
+  @Test
+  void shouldReportWhetherAnyCredentialIsConfigured() {
+    assertFalse(Socks5Credentials.isConfigured(name -> null));
+    assertFalse(Socks5Credentials.isConfigured(name -> "  "));
+    assertTrue(Socks5Credentials.isConfigured(Map.of(Socks5Credentials.USERNAME_ENV, "alice")::get));
+    assertTrue(Socks5Credentials.isConfigured(Map.of(Socks5Credentials.PASSWORD_ENV, "s3cret")::get));
   }
 
   private static byte[] bytes(String value) {

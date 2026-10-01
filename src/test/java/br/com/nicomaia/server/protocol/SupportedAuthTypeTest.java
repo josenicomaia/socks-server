@@ -18,7 +18,7 @@ class SupportedAuthTypeTest {
   }
 
   @Test
-  void shouldReturnNoAcceptableMethodsForByte0xFF() {
+  void shouldUse0xFFAsNoAcceptableMethodsReplyCode() {
     assertEquals((byte) 0xFF, SupportedAuthType.NO_ACCEPTABLE_METHODS.getNumber());
   }
 

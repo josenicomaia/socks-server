@@ -6,6 +6,7 @@ import br.com.nicomaia.server.connection.ConnectionHandler;
 import br.com.nicomaia.server.metrics.Metrics;
 import br.com.nicomaia.server.tui.Dashboard;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 public class Main {
@@ -20,8 +21,10 @@ public class Main {
       * on your behalf. Only run like this in strictly controlled            *
       * environments (local development, isolated test networks) and never   *
       * on a network reachable by untrusted hosts.                           *
-      * SOCKS_USERNAME / SOCKS_PASSWORD are ignored in this mode.            *
       ************************************************************************""";
+
+  static final String NO_AUTH_DASHBOARD_WARNING =
+      "! AUTHENTICATION DISABLED (--no-auth) - controlled environments only";
 
   public static void main(String[] args) {
     boolean tuiEnabled = Arrays.stream(args).noneMatch("--no-tui"::equals);
@@ -36,7 +39,7 @@ public class Main {
     ServerConfig config;
     try {
       config = ServerConfig.fromArgs(configArgs, metrics);
-    } catch (IllegalStateException e) {
+    } catch (IllegalArgumentException | IllegalStateException e) {
       System.err.println("Fatal: " + e.getMessage());
       System.exit(1);
       return;
@@ -46,17 +49,23 @@ public class Main {
       LogConfig.configureFileLogging();
     }
 
-    if (!config.authenticationRequired()) {
-      System.err.println(NO_AUTH_WARNING);
-      logger.warning(NO_AUTH_WARNING);
-    }
+    // Goes to stderr through the console handler, or to the log file when the TUI is enabled
+    // (the dashboard clears the screen, so it repeats the warning as a banner instead).
+    startupWarning(config).ifPresent(logger::warning);
 
     if (tuiEnabled) {
-      new Dashboard(config.port(), loadVersion(), metrics, !config.authenticationRequired())
-          .start();
+      var dashboard = new Dashboard(config.port(), loadVersion(), metrics);
+      if (!config.authenticationRequired()) {
+        dashboard.withWarning(NO_AUTH_DASHBOARD_WARNING);
+      }
+      dashboard.start();
     }
 
     new ConnectionHandler(config, metrics).start();
+  }
+
+  static Optional<String> startupWarning(ServerConfig config) {
+    return config.authenticationRequired() ? Optional.empty() : Optional.of(NO_AUTH_WARNING);
   }
 
   private static String loadVersion() {

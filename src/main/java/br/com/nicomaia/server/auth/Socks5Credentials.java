@@ -3,6 +3,7 @@ package br.com.nicomaia.server.auth;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * Credentials required to authenticate SOCKS5 clients via the RFC 1929 username/password
@@ -27,23 +28,37 @@ public final class Socks5Credentials {
   }
 
   public static Socks5Credentials fromEnvironment() {
-    return of(requireEnv(USERNAME_ENV), requireEnv(PASSWORD_ENV));
+    return fromEnvironment(System::getenv);
+  }
+
+  /** @param env environment lookup, e.g. {@code System::getenv} */
+  public static Socks5Credentials fromEnvironment(Function<String, String> env) {
+    return of(requireEnv(env, USERNAME_ENV), requireEnv(env, PASSWORD_ENV));
+  }
+
+  /** @return whether either credential variable is set to a non-blank value */
+  public static boolean isConfigured(Function<String, String> env) {
+    return !isBlank(env.apply(USERNAME_ENV)) || !isBlank(env.apply(PASSWORD_ENV));
   }
 
   public static Socks5Credentials of(String username, String password) {
     return new Socks5Credentials(encode("Username", username), encode("Password", password));
   }
 
-  private static String requireEnv(String name) {
-    String value = System.getenv(name);
-    if (value == null || value.isBlank()) {
+  private static String requireEnv(Function<String, String> env, String name) {
+    String value = env.apply(name);
+    if (isBlank(value)) {
       throw new IllegalStateException("Missing required environment variable: " + name);
     }
     return value;
   }
 
+  private static boolean isBlank(String value) {
+    return value == null || value.isBlank();
+  }
+
   private static byte[] encode(String field, String value) {
-    if (value == null || value.isBlank()) {
+    if (isBlank(value)) {
       throw new IllegalStateException(field + " must not be blank");
     }
     byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
