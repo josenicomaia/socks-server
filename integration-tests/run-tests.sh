@@ -1,7 +1,9 @@
 #!/bin/sh
 set -e
 
-PROXY="socks5://socks-server:5353"
+: "${SOCKS_USERNAME:?SOCKS_USERNAME must be set (see docker-compose.test.yml)}"
+: "${SOCKS_PASSWORD:?SOCKS_PASSWORD must be set (see docker-compose.test.yml)}"
+PROXY="socks5://${SOCKS_USERNAME}:${SOCKS_PASSWORD}@socks-server:5353"
 PASSED=0
 FAILED=0
 TOTAL=0
@@ -98,7 +100,7 @@ fi
 # --- Test 6: HTTPS via SOCKS5h (DNS resolved by proxy) ---
 echo ""
 echo "── Test 6: HTTPS via socks5h (proxy-side DNS) ──"
-HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5h://socks-server:5353" --max-time 10 https://httpbin.org/get 2>/dev/null || echo "000")
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5h://${SOCKS_USERNAME}:${SOCKS_PASSWORD}@socks-server:5353" --max-time 10 https://httpbin.org/get 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
     pass "HTTPS via socks5h works"
 else
@@ -213,6 +215,42 @@ if [ "$HTTP_CODE" != "200" ]; then
     pass "Refused connection handled gracefully (got $HTTP_CODE)"
 else
     fail "Refused connection" "expected failure, got HTTP 200"
+fi
+
+# curl exits with 97 (CURLE_PROXY) when the SOCKS handshake itself fails, which tells an
+# authentication rejection apart from a dead proxy (7), a timeout (28) or an upstream error.
+CURLE_PROXY=97
+
+# --- Test 14: Wrong credentials are rejected ---
+echo ""
+echo "── Test 14: Wrong credentials rejected ──"
+EXIT_CODE=0
+curl -4 -s -o /dev/null --proxy "socks5://${SOCKS_USERNAME}:wrong-password@socks-server:5353" --max-time 5 http://httpbin.org/get 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq "$CURLE_PROXY" ]; then
+    pass "Wrong credentials rejected during SOCKS handshake (curl exit $EXIT_CODE)"
+else
+    fail "Wrong credentials" "expected curl exit $CURLE_PROXY (SOCKS handshake failure), got $EXIT_CODE"
+fi
+
+# --- Test 15: No credentials (NO_AUTH) is rejected ---
+echo ""
+echo "── Test 15: Missing credentials (NO_AUTH) rejected ──"
+EXIT_CODE=0
+curl -4 -s -o /dev/null --proxy "socks5://socks-server:5353" --max-time 5 http://httpbin.org/get 2>/dev/null || EXIT_CODE=$?
+if [ "$EXIT_CODE" -eq "$CURLE_PROXY" ]; then
+    pass "Missing credentials rejected during SOCKS handshake (curl exit $EXIT_CODE)"
+else
+    fail "Missing credentials" "expected curl exit $CURLE_PROXY (SOCKS handshake failure), got $EXIT_CODE"
+fi
+
+# --- Test 16: --no-auth server accepts clients without credentials ---
+echo ""
+echo "── Test 16: --no-auth server proxies without credentials ──"
+HTTP_CODE=$(curl -4 -s -o /dev/null -w "%{http_code}" --proxy "socks5://socks-server-noauth:5353" --max-time 10 http://httpbin.org/get 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "200" ]; then
+    pass "--no-auth server proxied an unauthenticated client"
+else
+    fail "--no-auth" "expected HTTP 200 without credentials, got $HTTP_CODE"
 fi
 
 # Verify proxy still works after negative tests

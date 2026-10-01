@@ -2,6 +2,7 @@ package br.com.nicomaia.server.connection;
 
 import br.com.nicomaia.server.config.ServerConfig;
 import br.com.nicomaia.server.metrics.Metrics;
+import br.com.nicomaia.server.protocol.HandshakeThrottle;
 import br.com.nicomaia.server.protocol.SocksProtocolHandler;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -20,7 +21,12 @@ public class ConnectionHandler {
   public ConnectionHandler(ServerConfig config, Metrics metrics) {
     this.config = config;
     this.metrics = metrics;
-    this.protocolHandler = new SocksProtocolHandler(config.addressResolver(), config.handlers());
+    this.protocolHandler =
+        new SocksProtocolHandler(
+            config.addressResolver(),
+            config.handlers(),
+            config.authenticator(),
+            new HandshakeThrottle());
   }
 
   public void start() {

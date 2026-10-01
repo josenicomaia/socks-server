@@ -2,10 +2,37 @@ package br.com.nicomaia.server.tui;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import br.com.nicomaia.server.metrics.Metrics;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 class DashboardTest {
+
+  private static Dashboard silentDashboard() {
+    return new Dashboard(
+        5353, "1.0.0", Metrics.instance(), new PrintStream(OutputStream.nullOutputStream()));
+  }
+
+  @Test
+  void shouldShowWarningsInEveryFrame() {
+    var dashboard = silentDashboard().withWarning("! AUTHENTICATION DISABLED");
+
+    assertTrue(dashboard.frame().contains("! AUTHENTICATION DISABLED"));
+  }
+
+  @Test
+  void shouldNotShowWarningsByDefault() {
+    assertFalse(silentDashboard().frame().contains("AUTHENTICATION DISABLED"));
+  }
+
+  @Test
+  void shouldRejectWarningsThatDoNotFitTheFrame() {
+    var dashboard = silentDashboard();
+
+    assertThrows(IllegalArgumentException.class, () -> dashboard.withWarning("x".repeat(100)));
+  }
 
   @Test
   void shouldFormatBytesUnderKB() {

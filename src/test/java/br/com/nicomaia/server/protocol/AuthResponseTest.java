@@ -43,4 +43,14 @@ class AuthResponseTest {
     assertTrue(str.contains("socksVersion=5"));
     assertTrue(str.contains("NO_AUTH"));
   }
+
+  @Test
+  void shouldBuildRejectionResponseWithNoAcceptableMethods() {
+    var response = new AuthResponse((byte) 0x05, SupportedAuthType.NO_ACCEPTABLE_METHODS);
+    byte[] bytes = response.toBytes();
+
+    assertEquals(2, bytes.length);
+    assertEquals((byte) 0x05, bytes[0]);
+    assertEquals((byte) 0xFF, bytes[1]);
+  }
 }

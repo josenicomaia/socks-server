@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Dashboard {
 
@@ -27,6 +28,7 @@ public class Dashboard {
   private final int port;
   private final String version;
   private final PrintStream out;
+  private final List<String> warnings = new CopyOnWriteArrayList<>();
 
   public Dashboard(int port, String version, Metrics metrics) {
     this(port, version, metrics, System.out);
@@ -37,6 +39,15 @@ public class Dashboard {
     this.port = port;
     this.version = version;
     this.out = out;
+  }
+
+  /** Adds a warning shown in red under the header on every frame, e.g. an insecure mode. */
+  public Dashboard withWarning(String message) {
+    if (message.length() > WIDTH - 2) {
+      throw new IllegalArgumentException("Warning longer than " + (WIDTH - 2) + " chars");
+    }
+    warnings.add(message);
+    return this;
   }
 
   public void start() {
@@ -62,6 +73,11 @@ public class Dashboard {
   }
 
   private void render() {
+    out.print(frame());
+    out.flush();
+  }
+
+  String frame() {
     StringBuilder sb = new StringBuilder();
     sb.append("\033[H"); // cursor home
 
@@ -81,6 +97,12 @@ public class Dashboard {
     sb.append(DIM).append("╔").append("═".repeat(WIDTH)).append("╗").append(RESET).append("\n");
     appendRow(sb, buildHeaderLine(version, port));
     appendRow(sb, " ".repeat(WIDTH));
+
+    for (String warning : warnings) {
+      String line = "  " + warning;
+      appendRow(sb, RED + BOLD + line + RESET + " ".repeat(WIDTH - line.length()));
+      appendRow(sb, " ".repeat(WIDTH));
+    }
 
     // Stats row 1: Status / Uptime
     String status1Left = "  Status  " + GREEN + BOLD + "online" + RESET;
@@ -168,8 +190,7 @@ public class Dashboard {
     sb.append(DIM).append("╚").append("═".repeat(WIDTH)).append("╝").append(RESET).append("\n");
     sb.append(DIM).append("  Press Ctrl+C to stop").append(RESET);
 
-    out.print(sb);
-    out.flush();
+    return sb.toString();
   }
 
   private void appendRow(StringBuilder sb, String content) {

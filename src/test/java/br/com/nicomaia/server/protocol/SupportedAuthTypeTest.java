@@ -18,6 +18,11 @@ class SupportedAuthTypeTest {
   }
 
   @Test
+  void shouldUse0xFFAsNoAcceptableMethodsReplyCode() {
+    assertEquals((byte) 0xFF, SupportedAuthType.NO_ACCEPTABLE_METHODS.getNumber());
+  }
+
+  @Test
   void shouldParseValidAuthTypesFromByteArray() {
     byte[] buffer = {0x00, 0x02};
     Set<SupportedAuthType> result = SupportedAuthType.valueOf(buffer);
@@ -48,6 +53,14 @@ class SupportedAuthTypeTest {
   @Test
   void shouldReturnEmptySetForEmptyBuffer() {
     byte[] buffer = {};
+    Set<SupportedAuthType> result = SupportedAuthType.valueOf(buffer);
+
+    assertTrue(result.isEmpty());
+  }
+
+  @Test
+  void shouldNotTreatNoAcceptableMethodsAsAClientOffer() {
+    byte[] buffer = {(byte) 0xFF};
     Set<SupportedAuthType> result = SupportedAuthType.valueOf(buffer);
 
     assertTrue(result.isEmpty());
