@@ -95,7 +95,7 @@ class Socks5AuthenticatorTest {
   }
 
   @Test
-  void shouldAlwaysReplyWithSubNegotiationVersion1RegardlessOfClientVersionByte()
+  void shouldRejectUnsupportedSubNegotiationVersionEvenWithValidCredentials()
       throws IOException {
     var out = new ByteArrayOutputStream();
     // Client sends an invalid sub-negotiation VER byte (0x07 instead of 0x01).
@@ -112,12 +112,10 @@ class Socks5AuthenticatorTest {
 
     boolean result = authenticator.authenticate(in, out);
 
-    assertTrue(result);
-    byte[] response = out.toByteArray();
-    // Bytes 2-3 are the sub-negotiation response: must be VER=0x01 (RFC 1929), not the
-    // client's 0x07.
-    assertEquals(UsernamePasswordResponse.VERSION, response[2]);
-    assertEquals(0x00, response[3]);
+    assertFalse(result);
+    // Bytes 2-3 are the sub-negotiation response: VER=0x01 (RFC 1929, never the client's 0x07)
+    // and a failure status.
+    assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x01}, out.toByteArray());
   }
 
   private static ByteArrayInputStream negotiationAndCredentials(

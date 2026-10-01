@@ -59,6 +59,16 @@ public class Socks5Authenticator {
     out.flush();
 
     var credentialsRequest = SocketReader.readUsernamePassword(in);
+
+    if (credentialsRequest.version() != UsernamePasswordResponse.VERSION) {
+      logger.warning(
+          "Rejecting connection with unsupported sub-negotiation version: "
+              + credentialsRequest.version());
+      out.write(UsernamePasswordResponse.forOutcome(false).toBytes());
+      out.flush();
+      return false;
+    }
+
     boolean valid =
         credentials.matches(credentialsRequest.username(), credentialsRequest.password());
 
