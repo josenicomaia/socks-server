@@ -3,18 +3,25 @@ package br.com.nicomaia.server.protocol;
 import br.com.nicomaia.server.auth.Socks5Credentials;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.io.OutputStream;
+import java.time.Duration;
+import java.util.Objects;
 import java.util.Set;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Performs the SOCKS5 method negotiation followed by the RFC 1929 username/password
- * sub-negotiation. Only clients offering the {@code USERNAME} method are accepted; every other
- * negotiation (including plain {@code NO_AUTH}) is rejected with {@code NO_ACCEPTABLE_METHODS}.
+ * Performs the SOCKS5 method negotiation and, when credentials are required, the RFC 1929
+ * username/password sub-negotiation.
+ *
+ * <p>By default only clients offering {@code USERNAME} are accepted; every other negotiation
+ * (including plain {@code NO_AUTH}) is rejected with {@code NO_ACCEPTABLE_METHODS}. The {@link
+ * #withoutAuthentication()} mode inverts this and only accepts {@code NO_AUTH}; it exists for
+ * strictly controlled environments and must never face an untrusted network.
  *
  * <p>Operates purely on {@link InputStream}/{@link OutputStream} (no {@link java.net.Socket}
- * dependency) so it can be exercised with in-memory streams in tests.
+ * dependency) so it can be exercised with in-memory streams in tests. Logging of rejections is
+ * left to the caller, which knows the client's address.
  */
 public class Socks5Authenticator {
 
@@ -22,63 +29,110 @@ public class Socks5Authenticator {
 
   private static final byte SOCKS_VERSION = 0x05;
 
-  private final Socks5Credentials credentials;
+  /**
+   * Delay before answering a failed credential check. Slows down online brute force: each
+   * connection gets at most one guess, and that guess costs the attacker this long.
+   */
+  static final Duration DEFAULT_FAILURE_DELAY = Duration.ofSeconds(1);
 
-  public Socks5Authenticator(Socks5Credentials credentials) {
-    this.credentials = credentials;
+  public enum Outcome {
+    AUTHENTICATED,
+    UNSUPPORTED_VERSION,
+    NO_ACCEPTABLE_METHOD,
+    UNSUPPORTED_SUBNEGOTIATION_VERSION,
+    INVALID_CREDENTIALS;
+
+    public boolean isAuthenticated() {
+      return this == AUTHENTICATED;
+    }
   }
 
-  /** @return {@code true} if the client authenticated successfully. */
-  public boolean authenticate(InputStream in, OutputStream out) throws IOException {
+  /** {@code null} when authentication is disabled. */
+  private final Socks5Credentials credentials;
+
+  private final Duration failureDelay;
+
+  private Socks5Authenticator(Socks5Credentials credentials, Duration failureDelay) {
+    this.credentials = credentials;
+    this.failureDelay = failureDelay;
+  }
+
+  public static Socks5Authenticator requiring(Socks5Credentials credentials) {
+    return requiring(credentials, DEFAULT_FAILURE_DELAY);
+  }
+
+  static Socks5Authenticator requiring(Socks5Credentials credentials, Duration failureDelay) {
+    return new Socks5Authenticator(Objects.requireNonNull(credentials), failureDelay);
+  }
+
+  /** Accepts {@code NO_AUTH} clients only. Use exclusively in strictly controlled environments. */
+  public static Socks5Authenticator withoutAuthentication() {
+    return new Socks5Authenticator(null, Duration.ZERO);
+  }
+
+  public boolean isAuthenticationRequired() {
+    return credentials != null;
+  }
+
+  public Outcome authenticate(InputStream in, OutputStream out) throws IOException {
     byte[] header = SocketReader.readFully(in, 2);
-    byte socksVersion = header[0];
-    int methodCount = header[1] & 0xFF;
-
-    if (socksVersion != SOCKS_VERSION) {
-      logger.info("Rejecting connection with unsupported SOCKS version: " + socksVersion);
-      return false;
+    if (header[0] != SOCKS_VERSION) {
+      return Outcome.UNSUPPORTED_VERSION; // not SOCKS5: don't answer in a protocol it doesn't speak
     }
 
-    byte[] methodBytes = SocketReader.readFully(in, methodCount);
-    Set<SupportedAuthType> offeredMethods = SupportedAuthType.valueOf(methodBytes);
+    Set<SupportedAuthType> offeredMethods =
+        SupportedAuthType.valueOf(SocketReader.readFully(in, header[1] & 0xFF));
+    logger.info(new AuthRequest(header[0], header[1], offeredMethods).toString());
 
-    var authRequest = new AuthRequest(socksVersion, header[1], offeredMethods);
-    logger.info(authRequest.toString());
+    SupportedAuthType requiredMethod =
+        isAuthenticationRequired() ? SupportedAuthType.USERNAME : SupportedAuthType.NO_AUTH;
 
-    if (!offeredMethods.contains(SupportedAuthType.USERNAME)) {
-      var rejection = new AuthResponse(socksVersion, SupportedAuthType.NO_ACCEPTABLE_METHODS);
-      logger.warning("Client did not offer username/password authentication; rejecting");
-      out.write(rejection.toBytes());
-      out.flush();
-      return false;
+    if (!offeredMethods.contains(requiredMethod)) {
+      reply(out, new AuthResponse(SOCKS_VERSION, SupportedAuthType.NO_ACCEPTABLE_METHODS));
+      return Outcome.NO_ACCEPTABLE_METHOD;
     }
 
-    var authResponse = new AuthResponse(socksVersion, SupportedAuthType.USERNAME);
-    logger.info(authResponse.toString());
-    out.write(authResponse.toBytes());
+    reply(out, new AuthResponse(SOCKS_VERSION, requiredMethod));
+
+    return isAuthenticationRequired() ? verifyCredentials(in, out) : Outcome.AUTHENTICATED;
+  }
+
+  private Outcome verifyCredentials(InputStream in, OutputStream out) throws IOException {
+    var request = UsernamePasswordRequest.readFrom(in);
+
+    Outcome outcome;
+    if (request.version() != UsernamePasswordResponse.VERSION) {
+      outcome = Outcome.UNSUPPORTED_SUBNEGOTIATION_VERSION;
+    } else if (!credentials.matches(request.username(), request.password())) {
+      outcome = Outcome.INVALID_CREDENTIALS;
+    } else {
+      outcome = Outcome.AUTHENTICATED;
+    }
+
+    if (!outcome.isAuthenticated()) {
+      delayFailure();
+    }
+
+    out.write(UsernamePasswordResponse.forOutcome(outcome.isAuthenticated()).toBytes());
     out.flush();
+    return outcome;
+  }
 
-    var credentialsRequest = SocketReader.readUsernamePassword(in);
-
-    if (credentialsRequest.version() != UsernamePasswordResponse.VERSION) {
-      logger.warning(
-          "Rejecting connection with unsupported sub-negotiation version: "
-              + credentialsRequest.version());
-      out.write(UsernamePasswordResponse.forOutcome(false).toBytes());
-      out.flush();
-      return false;
-    }
-
-    boolean valid =
-        credentials.matches(credentialsRequest.username(), credentialsRequest.password());
-
-    out.write(UsernamePasswordResponse.forOutcome(valid).toBytes());
+  private static void reply(OutputStream out, AuthResponse response) throws IOException {
+    logger.info(response.toString());
+    out.write(response.toBytes());
     out.flush();
+  }
 
-    if (!valid) {
-      logger.warning("Rejected connection: invalid username/password");
+  private void delayFailure() throws InterruptedIOException {
+    if (failureDelay.isZero()) {
+      return;
     }
-
-    return valid;
+    try {
+      Thread.sleep(failureDelay);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new InterruptedIOException("Interrupted while delaying authentication failure");
+    }
   }
 }

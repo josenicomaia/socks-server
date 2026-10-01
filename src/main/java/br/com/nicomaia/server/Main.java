@@ -6,8 +6,23 @@ import br.com.nicomaia.server.connection.ConnectionHandler;
 import br.com.nicomaia.server.metrics.Metrics;
 import br.com.nicomaia.server.tui.Dashboard;
 import java.util.Arrays;
+import java.util.logging.Logger;
 
 public class Main {
+
+  private static final Logger logger = Logger.getLogger(Main.class.getName());
+
+  static final String NO_AUTH_WARNING =
+      """
+      ************************************************************************
+      * SECURITY WARNING: authentication is DISABLED (--no-auth).            *
+      * Anyone who can reach this port can use the proxy to open connections *
+      * on your behalf. Only run like this in strictly controlled            *
+      * environments (local development, isolated test networks) and never   *
+      * on a network reachable by untrusted hosts.                           *
+      * SOCKS_USERNAME / SOCKS_PASSWORD are ignored in this mode.            *
+      ************************************************************************""";
+
   public static void main(String[] args) {
     boolean tuiEnabled = Arrays.stream(args).noneMatch("--no-tui"::equals);
 
@@ -29,7 +44,16 @@ public class Main {
 
     if (tuiEnabled) {
       LogConfig.configureFileLogging();
-      new Dashboard(config.port(), loadVersion(), metrics).start();
+    }
+
+    if (!config.authenticationRequired()) {
+      System.err.println(NO_AUTH_WARNING);
+      logger.warning(NO_AUTH_WARNING);
+    }
+
+    if (tuiEnabled) {
+      new Dashboard(config.port(), loadVersion(), metrics, !config.authenticationRequired())
+          .start();
     }
 
     new ConnectionHandler(config, metrics).start();

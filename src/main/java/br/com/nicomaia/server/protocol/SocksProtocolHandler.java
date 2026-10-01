@@ -1,6 +1,5 @@
 package br.com.nicomaia.server.protocol;
 
-import br.com.nicomaia.server.auth.Socks5Credentials;
 import br.com.nicomaia.server.commands.Command;
 import br.com.nicomaia.server.commands.CommandType;
 import br.com.nicomaia.server.commands.handlers.HandlersHolder;
@@ -34,18 +33,18 @@ public class SocksProtocolHandler {
   private final int handshakeTimeoutMillis;
 
   public SocksProtocolHandler(
-      AddressResolver addressResolver, HandlersHolder handlers, Socks5Credentials credentials) {
-    this(addressResolver, handlers, credentials, DEFAULT_HANDSHAKE_TIMEOUT);
+      AddressResolver addressResolver, HandlersHolder handlers, Socks5Authenticator authenticator) {
+    this(addressResolver, handlers, authenticator, DEFAULT_HANDSHAKE_TIMEOUT);
   }
 
   SocksProtocolHandler(
       AddressResolver addressResolver,
       HandlersHolder handlers,
-      Socks5Credentials credentials,
+      Socks5Authenticator authenticator,
       Duration handshakeTimeout) {
     this.addressResolver = addressResolver;
     this.handlers = handlers;
-    this.authenticator = new Socks5Authenticator(credentials);
+    this.authenticator = authenticator;
     this.handshakeTimeoutMillis = Math.toIntExact(handshakeTimeout.toMillis());
   }
 
@@ -54,17 +53,26 @@ public class SocksProtocolHandler {
       clientSocket.setSoTimeout(handshakeTimeoutMillis);
       InputStream in = clientSocket.getInputStream();
 
-      if (!authenticator.authenticate(in, clientSocket.getOutputStream())) {
+      var outcome = authenticator.authenticate(in, clientSocket.getOutputStream());
+      if (!outcome.isAuthenticated()) {
+        // Never log the username: a typo'd password pasted into the username field would leak.
+        logger.warning(
+            "Rejected SOCKS handshake from " + clientSocket.getRemoteSocketAddress() + ": " + outcome);
         closeQuietly(clientSocket);
         return;
       }
 
       dispatchCommand(clientSocket, in);
     } catch (SocketTimeoutException e) {
-      logger.info("Closing connection: handshake timed out after " + handshakeTimeoutMillis + "ms");
+      logger.info(
+          "Closing connection from "
+              + clientSocket.getRemoteSocketAddress()
+              + ": handshake timed out after "
+              + handshakeTimeoutMillis
+              + "ms");
       closeQuietly(clientSocket);
     } catch (EOFException e) {
-      logger.fine(() -> "Closing connection: client disconnected during handshake");
+      logger.fine(() -> "Client disconnected during handshake: " + clientSocket.getRemoteSocketAddress());
       closeQuietly(clientSocket);
     } catch (Exception e) {
       logger.log(Level.WARNING, "Error handling SOCKS connection", e);

@@ -21,7 +21,8 @@ public class ConnectionHandler {
     this.config = config;
     this.metrics = metrics;
     this.protocolHandler =
-        new SocksProtocolHandler(config.addressResolver(), config.handlers(), config.credentials());
+        new SocksProtocolHandler(
+            config.addressResolver(), config.handlers(), config.authenticator());
   }
 
   public void start() {

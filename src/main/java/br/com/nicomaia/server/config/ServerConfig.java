@@ -10,6 +10,8 @@ import br.com.nicomaia.server.net.AddressType;
 import br.com.nicomaia.server.net.resolvers.DomainInetResolver;
 import br.com.nicomaia.server.net.resolvers.InetResolver;
 import br.com.nicomaia.server.net.resolvers.IpInetResolver;
+import br.com.nicomaia.server.protocol.Socks5Authenticator;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -17,7 +19,13 @@ public record ServerConfig(
     int port,
     AddressResolver addressResolver,
     HandlersHolder handlers,
-    Socks5Credentials credentials) {
+    Socks5Authenticator authenticator) {
+
+  /**
+   * Opt-out flag that starts the server without authentication. Only for strictly controlled
+   * environments (local development, isolated test networks); never on a reachable network.
+   */
+  public static final String NO_AUTH_FLAG = "--no-auth";
 
   private static final int DEFAULT_PORT = 5353;
 
@@ -32,11 +40,16 @@ public record ServerConfig(
    *
    * <p>Deliberately does not catch exceptions from {@code credentialsSupplier}: a missing/blank
    * credential must propagate as {@link IllegalStateException} so the caller (see {@link
-   * br.com.nicomaia.server.Main}) can refuse to start the server.
+   * br.com.nicomaia.server.Main}) can refuse to start the server. With {@link #NO_AUTH_FLAG} the
+   * supplier is never called.
    */
   static ServerConfig fromArgs(
       String[] args, Metrics metrics, Supplier<Socks5Credentials> credentialsSupplier) {
-    int port = (args.length > 0) ? Integer.parseInt(args[0]) : DEFAULT_PORT;
+    boolean noAuth = Arrays.asList(args).contains(NO_AUTH_FLAG);
+    String[] positional =
+        Arrays.stream(args).filter(arg -> !NO_AUTH_FLAG.equals(arg)).toArray(String[]::new);
+
+    int port = (positional.length > 0) ? Integer.parseInt(positional[0]) : DEFAULT_PORT;
 
     Map<AddressType, InetResolver> resolvers =
         Map.of(
@@ -49,8 +62,15 @@ public record ServerConfig(
     HandlersHolder handlers = new HandlersHolder();
     handlers.register(CommandType.CONNECT, new ConnectHandler(metrics));
 
-    Socks5Credentials credentials = credentialsSupplier.get();
+    Socks5Authenticator authenticator =
+        noAuth
+            ? Socks5Authenticator.withoutAuthentication()
+            : Socks5Authenticator.requiring(credentialsSupplier.get());
 
-    return new ServerConfig(port, addressResolver, handlers, credentials);
+    return new ServerConfig(port, addressResolver, handlers, authenticator);
+  }
+
+  public boolean authenticationRequired() {
+    return authenticator.isAuthenticationRequired();
   }
 }

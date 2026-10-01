@@ -26,6 +26,9 @@ the process refuses to start if either is missing:
 | `SOCKS_USERNAME` | Required username |
 | `SOCKS_PASSWORD` | Required password |
 
+Each value must be at most **255 bytes** in UTF-8 (the RFC 1929 field limit); longer values are
+rejected at startup.
+
 ```bash
 export SOCKS_USERNAME=myuser
 export SOCKS_PASSWORD=mypassword
@@ -39,10 +42,31 @@ network-level controls (firewall/VPN) if the proxy is reachable over an untruste
 Clients must complete the handshake (greeting, credentials and command request) within
 **10 seconds**; connections that stall are closed.
 
+A failed credential check is answered only after a **1 second** delay, and each connection gets a
+single attempt, which slows down online brute force. Rejected handshakes are logged as warnings
+with the client address (never the submitted username or password), so they can feed tools such
+as fail2ban.
+
 > **Upgrading from 1.0.x:** authentication used to be disabled (`NO_AUTH` was always accepted).
 > Existing deployments must now set `SOCKS_USERNAME` and `SOCKS_PASSWORD` — including
 > `docker run` — or the server will refuse to start, and every client must be reconfigured to
-> send those credentials.
+> send those credentials. To keep the old behavior in a strictly controlled environment, start
+> the server with `--no-auth` (see below).
+
+### Running without authentication (`--no-auth`)
+
+> [!CAUTION]
+> `--no-auth` turns the server into an **open proxy**: anyone who can reach the port can use it
+> to open connections on your behalf. Only use it in **strictly controlled environments** (local
+> development, isolated test networks) and never on a network reachable by untrusted hosts.
+
+```bash
+java -jar target/server-*.jar --no-auth
+docker run -p 5353:5353 socks-server --no-auth
+```
+
+In this mode only `NO_AUTH` clients are accepted, `SOCKS_USERNAME`/`SOCKS_PASSWORD` are ignored,
+and the server prints a security warning at startup (and keeps one on the TUI dashboard).
 
 ## Quick Start
 
@@ -60,7 +84,8 @@ export SOCKS_PASSWORD=mypassword
 java -jar target/server-*.jar
 ```
 
-The credentials are required for every invocation below (see [Authentication](#authentication)).
+The credentials are required for every invocation below unless `--no-auth` is passed (see
+[Authentication](#authentication)).
 By default, the server starts on port **5353** with the TUI dashboard enabled.
 
 ### Custom Port
@@ -74,6 +99,7 @@ java -jar target/server-*.jar 1080
 | Flag | Description |
 |---|---|
 | `--no-tui` | Disable the TUI dashboard (useful for Docker, CI, or piped output) |
+| `--no-auth` | Disable authentication — **strictly controlled environments only** (see [Running without authentication](#running-without-authentication---no-auth)) |
 
 ### Examples
 

@@ -38,7 +38,7 @@ class ServerConfigTest {
         ServerConfig.fromArgs(new String[0], Metrics.instance(), () -> credentials);
 
     assertEquals(5353, config.port());
-    assertSame(credentials, config.credentials());
+    assertTrue(config.authenticationRequired());
   }
 
   @Test
@@ -49,5 +49,34 @@ class ServerConfigTest {
         ServerConfig.fromArgs(new String[] {"1080"}, Metrics.instance(), () -> credentials);
 
     assertEquals(1080, config.port());
+  }
+
+  @Test
+  void shouldDisableAuthenticationWithNoAuthFlagWithoutReadingCredentials() {
+    ServerConfig config =
+        ServerConfig.fromArgs(
+            new String[] {ServerConfig.NO_AUTH_FLAG},
+            Metrics.instance(),
+            () -> {
+              throw new AssertionError("credentials must not be read in --no-auth mode");
+            });
+
+    assertFalse(config.authenticationRequired());
+    assertEquals(5353, config.port());
+  }
+
+  @Test
+  void shouldAcceptNoAuthFlagInAnyPositionAlongsidePort() {
+    ServerConfig before =
+        ServerConfig.fromArgs(
+            new String[] {ServerConfig.NO_AUTH_FLAG, "1080"}, Metrics.instance(), () -> null);
+    ServerConfig after =
+        ServerConfig.fromArgs(
+            new String[] {"1080", ServerConfig.NO_AUTH_FLAG}, Metrics.instance(), () -> null);
+
+    assertEquals(1080, before.port());
+    assertFalse(before.authenticationRequired());
+    assertEquals(1080, after.port());
+    assertFalse(after.authenticationRequired());
   }
 }

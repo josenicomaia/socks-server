@@ -3,10 +3,13 @@ package br.com.nicomaia.server.protocol;
 import static org.junit.jupiter.api.Assertions.*;
 
 import br.com.nicomaia.server.auth.Socks5Credentials;
+import br.com.nicomaia.server.protocol.Socks5Authenticator.Outcome;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -17,7 +20,8 @@ import org.junit.jupiter.api.Test;
 class Socks5AuthenticatorTest {
 
   private static final Socks5Credentials CREDENTIALS = Socks5Credentials.of("alice", "s3cret");
-  private final Socks5Authenticator authenticator = new Socks5Authenticator(CREDENTIALS);
+  private final Socks5Authenticator authenticator =
+      Socks5Authenticator.requiring(CREDENTIALS, Duration.ZERO);
 
   @Test
   void shouldRejectUnsupportedSocksVersionWithoutReplying() throws IOException {
@@ -25,9 +29,9 @@ class Socks5AuthenticatorTest {
     var out = new ByteArrayOutputStream();
     var in = new ByteArrayInputStream(new byte[] {0x04, 0x01, 0x02});
 
-    boolean result = authenticator.authenticate(in, out);
+    Outcome result = authenticator.authenticate(in, out);
 
-    assertFalse(result);
+    assertEquals(Outcome.UNSUPPORTED_VERSION, result);
     assertEquals(0, out.size(), "Server must not reply to a non-SOCKS5 hello");
   }
 
@@ -42,9 +46,9 @@ class Socks5AuthenticatorTest {
     var out = new ByteArrayOutputStream();
     var in = negotiationAndCredentials(methods, "alice", "s3cret");
 
-    boolean result = authenticator.authenticate(in, out);
+    Outcome result = authenticator.authenticate(in, out);
 
-    assertTrue(result);
+    assertEquals(Outcome.AUTHENTICATED, result);
     assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x00}, out.toByteArray());
   }
 
@@ -53,9 +57,9 @@ class Socks5AuthenticatorTest {
     var out = new ByteArrayOutputStream();
     var in = new ByteArrayInputStream(new byte[] {0x05, 0x00}); // VER, NMETHODS=0
 
-    boolean result = authenticator.authenticate(in, out);
+    Outcome result = authenticator.authenticate(in, out);
 
-    assertFalse(result);
+    assertEquals(Outcome.NO_ACCEPTABLE_METHOD, result);
     assertArrayEquals(new byte[] {0x05, (byte) 0xFF}, out.toByteArray());
   }
 
@@ -64,9 +68,9 @@ class Socks5AuthenticatorTest {
     var out = new ByteArrayOutputStream();
     var in = new ByteArrayInputStream(new byte[] {0x05, 0x01, 0x00});
 
-    boolean result = authenticator.authenticate(in, out);
+    Outcome result = authenticator.authenticate(in, out);
 
-    assertFalse(result);
+    assertEquals(Outcome.NO_ACCEPTABLE_METHOD, result);
     assertArrayEquals(new byte[] {0x05, (byte) 0xFF}, out.toByteArray());
   }
 
@@ -75,11 +79,10 @@ class Socks5AuthenticatorTest {
     var out = new ByteArrayOutputStream();
     var in = negotiationAndCredentials(new byte[] {0x00, 0x02}, "alice", "s3cret");
 
-    boolean result = authenticator.authenticate(in, out);
+    Outcome result = authenticator.authenticate(in, out);
 
-    assertTrue(result);
-    byte[] response = out.toByteArray();
-    assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x00}, response);
+    assertEquals(Outcome.AUTHENTICATED, result);
+    assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x00}, out.toByteArray());
   }
 
   @Test
@@ -87,11 +90,29 @@ class Socks5AuthenticatorTest {
     var out = new ByteArrayOutputStream();
     var in = negotiationAndCredentials(new byte[] {0x02}, "alice", "wrong-password");
 
-    boolean result = authenticator.authenticate(in, out);
+    Outcome result = authenticator.authenticate(in, out);
 
-    assertFalse(result);
-    byte[] response = out.toByteArray();
-    assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x01}, response);
+    assertEquals(Outcome.INVALID_CREDENTIALS, result);
+    assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x01}, out.toByteArray());
+  }
+
+  @Test
+  void shouldDelayReplyToInvalidCredentials() throws IOException {
+    var delayed = Socks5Authenticator.requiring(CREDENTIALS, Duration.ofMillis(200));
+    var out = new ByteArrayOutputStream();
+    var in = negotiationAndCredentials(new byte[] {0x02}, "alice", "wrong-password");
+
+    long start = System.nanoTime();
+    Outcome result = delayed.authenticate(in, out);
+    long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+    assertEquals(Outcome.INVALID_CREDENTIALS, result);
+    assertTrue(elapsedMillis >= 200, "Failure reply came after only " + elapsedMillis + "ms");
+  }
+
+  @Test
+  void shouldUseOneSecondFailureDelayByDefault() {
+    assertEquals(Duration.ofSeconds(1), Socks5Authenticator.DEFAULT_FAILURE_DELAY);
   }
 
   @Test
@@ -110,12 +131,66 @@ class Socks5AuthenticatorTest {
     payload.write(password);
     var in = new ByteArrayInputStream(payload.toByteArray());
 
-    boolean result = authenticator.authenticate(in, out);
+    Outcome result = authenticator.authenticate(in, out);
 
-    assertFalse(result);
+    assertEquals(Outcome.UNSUPPORTED_SUBNEGOTIATION_VERSION, result);
     // Bytes 2-3 are the sub-negotiation response: VER=0x01 (RFC 1929, never the client's 0x07)
     // and a failure status.
     assertArrayEquals(new byte[] {0x05, 0x02, 0x01, 0x01}, out.toByteArray());
+  }
+
+  @Test
+  void shouldPropagateEofWhenClientDisconnectsMidCredentials() {
+    var payload = new ByteArrayOutputStream();
+    payload.writeBytes(new byte[] {0x05, 0x01, 0x02});
+    payload.writeBytes(new byte[] {0x01, 0x05, 'a', 'l'}); // ULEN=5 but only 2 bytes follow
+    var in = new ByteArrayInputStream(payload.toByteArray());
+
+    assertThrows(EOFException.class, () -> authenticator.authenticate(in, new ByteArrayOutputStream()));
+  }
+
+  @Test
+  void shouldRequireAuthenticationWhenBuiltWithCredentials() {
+    assertTrue(Socks5Authenticator.requiring(CREDENTIALS).isAuthenticationRequired());
+  }
+
+  // --- --no-auth mode ---
+
+  @Test
+  void shouldAcceptNoAuthClientWhenAuthenticationIsDisabled() throws IOException {
+    var noAuth = Socks5Authenticator.withoutAuthentication();
+    var out = new ByteArrayOutputStream();
+    var in = new ByteArrayInputStream(new byte[] {0x05, 0x01, 0x00});
+
+    Outcome result = noAuth.authenticate(in, out);
+
+    assertFalse(noAuth.isAuthenticationRequired());
+    assertEquals(Outcome.AUTHENTICATED, result);
+    assertArrayEquals(new byte[] {0x05, 0x00}, out.toByteArray());
+  }
+
+  @Test
+  void shouldSelectNoAuthWhenClientOffersBothMethodsAndAuthenticationIsDisabled()
+      throws IOException {
+    var out = new ByteArrayOutputStream();
+    var in = new ByteArrayInputStream(new byte[] {0x05, 0x02, 0x00, 0x02});
+
+    Outcome result = Socks5Authenticator.withoutAuthentication().authenticate(in, out);
+
+    assertEquals(Outcome.AUTHENTICATED, result);
+    // Only the method-selection reply: no credential sub-negotiation takes place.
+    assertArrayEquals(new byte[] {0x05, 0x00}, out.toByteArray());
+  }
+
+  @Test
+  void shouldRejectClientNotOfferingNoAuthWhenAuthenticationIsDisabled() throws IOException {
+    var out = new ByteArrayOutputStream();
+    var in = new ByteArrayInputStream(new byte[] {0x05, 0x01, 0x02}); // USERNAME only
+
+    Outcome result = Socks5Authenticator.withoutAuthentication().authenticate(in, out);
+
+    assertEquals(Outcome.NO_ACCEPTABLE_METHOD, result);
+    assertArrayEquals(new byte[] {0x05, (byte) 0xFF}, out.toByteArray());
   }
 
   private static ByteArrayInputStream negotiationAndCredentials(

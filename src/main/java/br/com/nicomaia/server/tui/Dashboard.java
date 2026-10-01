@@ -27,16 +27,31 @@ public class Dashboard {
   private final int port;
   private final String version;
   private final PrintStream out;
+  private final boolean authenticationDisabled;
 
   public Dashboard(int port, String version, Metrics metrics) {
-    this(port, version, metrics, System.out);
+    this(port, version, metrics, false);
+  }
+
+  public Dashboard(int port, String version, Metrics metrics, boolean authenticationDisabled) {
+    this(port, version, metrics, System.out, authenticationDisabled);
   }
 
   public Dashboard(int port, String version, Metrics metrics, PrintStream out) {
+    this(port, version, metrics, out, false);
+  }
+
+  public Dashboard(
+      int port,
+      String version,
+      Metrics metrics,
+      PrintStream out,
+      boolean authenticationDisabled) {
     this.metrics = metrics;
     this.port = port;
     this.version = version;
     this.out = out;
+    this.authenticationDisabled = authenticationDisabled;
   }
 
   public void start() {
@@ -81,6 +96,12 @@ public class Dashboard {
     sb.append(DIM).append("╔").append("═".repeat(WIDTH)).append("╗").append(RESET).append("\n");
     appendRow(sb, buildHeaderLine(version, port));
     appendRow(sb, " ".repeat(WIDTH));
+
+    if (authenticationDisabled) {
+      String warning = "  ! AUTHENTICATION DISABLED (--no-auth) - controlled environments only";
+      appendRow(sb, RED + BOLD + warning + RESET + " ".repeat(WIDTH - warning.length()));
+      appendRow(sb, " ".repeat(WIDTH));
+    }
 
     // Stats row 1: Status / Uptime
     String status1Left = "  Status  " + GREEN + BOLD + "online" + RESET;

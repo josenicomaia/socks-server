@@ -31,11 +31,12 @@ import org.junit.jupiter.api.Test;
  */
 class SocksProtocolHandlerTest {
 
-  private static final Socks5Credentials CREDENTIALS = Socks5Credentials.of("alice", "s3cret");
+  private static final Socks5Authenticator AUTHENTICATOR =
+      Socks5Authenticator.requiring(Socks5Credentials.of("alice", "s3cret"), Duration.ZERO);
 
   @Test
   void shouldNotDispatchCommandWhenAuthenticationFails() throws Exception {
-    try (var harness = Harness.start(CREDENTIALS);
+    try (var harness = Harness.start(AUTHENTICATOR);
         Socket client = harness.connectClient()) {
       OutputStream out = client.getOutputStream();
 
@@ -50,7 +51,7 @@ class SocksProtocolHandlerTest {
 
   @Test
   void shouldCloseConnectionAfterInvalidCredentials() throws Exception {
-    try (var harness = Harness.start(CREDENTIALS);
+    try (var harness = Harness.start(AUTHENTICATOR);
         Socket client = harness.connectClient()) {
       OutputStream out = client.getOutputStream();
 
@@ -69,7 +70,7 @@ class SocksProtocolHandlerTest {
 
   @Test
   void shouldAuthenticateAndDispatchCommand() throws Exception {
-    try (var harness = Harness.start(CREDENTIALS);
+    try (var harness = Harness.start(AUTHENTICATOR);
         Socket client = harness.connectClient()) {
       OutputStream out = client.getOutputStream();
 
@@ -91,8 +92,26 @@ class SocksProtocolHandlerTest {
   }
 
   @Test
+  void shouldDispatchCommandWithoutCredentialsWhenAuthenticationIsDisabled() throws Exception {
+    try (var harness = Harness.start(Socks5Authenticator.withoutAuthentication());
+        Socket client = harness.connectClient()) {
+      OutputStream out = client.getOutputStream();
+
+      out.write(new byte[] {0x05, 0x01, 0x00}); // NO_AUTH only
+      out.flush();
+      assertArrayEquals(new byte[] {0x05, 0x00}, client.getInputStream().readNBytes(2));
+
+      // CONNECT to 127.0.0.1:80, straight after method selection
+      out.write(new byte[] {0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0, 80});
+      out.flush();
+
+      assertTrue(harness.awaitCommandDispatched(2, TimeUnit.SECONDS));
+    }
+  }
+
+  @Test
   void shouldCloseIdleConnectionWhenHandshakeTimesOut() throws Exception {
-    try (var harness = Harness.start(CREDENTIALS, Duration.ofMillis(300));
+    try (var harness = Harness.start(AUTHENTICATOR, Duration.ofMillis(300));
         Socket client = harness.connectClient()) {
       client.setSoTimeout(5_000); // fail the test instead of hanging if the server never closes
 
@@ -134,7 +153,7 @@ class SocksProtocolHandlerTest {
     private final AtomicInteger commandHandlerSoTimeout = new AtomicInteger(-1);
 
     private Harness(
-        ServerSocket serverSocket, Socks5Credentials credentials, Duration handshakeTimeout) {
+        ServerSocket serverSocket, Socks5Authenticator authenticator, Duration handshakeTimeout) {
       this.serverSocket = serverSocket;
 
       Map<AddressType, InetResolver> resolvers = Map.of(AddressType.IPV4, new IpInetResolver());
@@ -152,7 +171,7 @@ class SocksProtocolHandlerTest {
           });
 
       var protocolHandler =
-          new SocksProtocolHandler(addressResolver, handlers, credentials, handshakeTimeout);
+          new SocksProtocolHandler(addressResolver, handlers, authenticator, handshakeTimeout);
 
       this.serverThread =
           new Thread(
@@ -168,14 +187,14 @@ class SocksProtocolHandlerTest {
       serverThread.start();
     }
 
-    static Harness start(Socks5Credentials credentials) throws IOException {
-      return start(credentials, SocksProtocolHandler.DEFAULT_HANDSHAKE_TIMEOUT);
+    static Harness start(Socks5Authenticator authenticator) throws IOException {
+      return start(authenticator, SocksProtocolHandler.DEFAULT_HANDSHAKE_TIMEOUT);
     }
 
-    static Harness start(Socks5Credentials credentials, Duration handshakeTimeout)
+    static Harness start(Socks5Authenticator authenticator, Duration handshakeTimeout)
         throws IOException {
       return new Harness(
-          new ServerSocket(0, 1, InetAddress.getLoopbackAddress()), credentials, handshakeTimeout);
+          new ServerSocket(0, 1, InetAddress.getLoopbackAddress()), authenticator, handshakeTimeout);
     }
 
     Socket connectClient() throws IOException {
